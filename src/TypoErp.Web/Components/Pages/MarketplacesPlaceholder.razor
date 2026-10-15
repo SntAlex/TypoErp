@@ -1,0 +1,24 @@
+@page "/marketplaces"
+@attribute [Authorize]
+
+<PageTitle>Маркетплейсы — TypoErp</PageTitle>
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @if (!auth.User.HasPermission(AppPermission.MarketplacesView))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">
+                У вас отсутствует разрешение на просмотр раздела «Маркетплейсы» (<code>MarketplacesView</code>).
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.h4" Class="mb-3">Раздел «Маркетплейсы»</MudText>
+            <MudPaper Elevation="1" Class="pa-6">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    Модуль «Маркетплейсы» (<code>TypoErp.Modules.Marketplaces</code>) запланирован к третьему этапу разработки.
+                </MudAlert>
+            </MudPaper>
+        }
+    </Authorized>
+</AuthorizeView>

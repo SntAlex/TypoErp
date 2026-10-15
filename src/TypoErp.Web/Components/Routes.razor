@@ -1,0 +1,23 @@
+﻿<CascadingAuthenticationState>
+    <Router AppAssembly="typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+                <NotAuthorized>
+                    @if (context.User.IsAuthenticated())
+                    {
+                        <MudContainer MaxWidth="MaxWidth.Small" Class="mt-12">
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">
+                                У вас нет прав доступа к данному разделу. Обратитесь к администратору системы.
+                            </MudAlert>
+                        </MudContainer>
+                    }
+                    else
+                    {
+                        <RedirectToLogin />
+                    }
+                </NotAuthorized>
+            </AuthorizeRouteView>
+            <FocusOnNavigate RouteData="routeData" Selector="h1" />
+        </Found>
+    </Router>
+</CascadingAuthenticationState>

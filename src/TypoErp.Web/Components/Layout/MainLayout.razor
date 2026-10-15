@@ -1,0 +1,89 @@
+﻿@inherits LayoutComponentBase
+@inject AuthenticationStateProvider AuthStateProvider
+@inject IDialogService DialogService
+
+<MudThemeProvider />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <AuthorizeView>
+        <Authorized Context="auth">
+            <MudAppBar Elevation="1" Color="Color.Primary">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                               Color="Color.Inherit"
+                               Edge="Edge.Start"
+                               OnClick="ToggleDrawer" />
+                <MudText Typo="Typo.h6" Class="ml-2">TypoErp</MudText>
+                <MudSpacer />
+
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudChip T="string"
+                             Size="Size.Small"
+                             Color="@(auth.User.IsAdministrator() ? Color.Warning : Color.Surface)"
+                             Variant="Variant.Filled">
+                        @(auth.User.IsAdministrator() ? "Администратор" : "Работник")
+                    </MudChip>
+
+                    <MudText Typo="Typo.body2">
+                        <strong>@auth.User.GetDisplayName()</strong> (@auth.User.GetUsername())
+                    </MudText>
+
+                    <MudTooltip Text="Сменить свой пароль">
+                        <MudIconButton Icon="@Icons.Material.Filled.Key"
+                                       Color="Color.Inherit"
+                                       OnClick="@(() => OpenChangePasswordDialogAsync(auth.User))" />
+                    </MudTooltip>
+
+                    <form action="/account/logout" method="post" style="margin:0;">
+                        <MudButton ButtonType="ButtonType.Submit"
+                                   Variant="Variant.Outlined"
+                                   Color="Color.Inherit"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Logout">
+                            Выход
+                        </MudButton>
+                    </form>
+                </MudStack>
+            </MudAppBar>
+
+            <MudDrawer @bind-Open="_drawerOpen" Elevation="2" ClipMode="DrawerClipMode.Always">
+                <NavMenu />
+            </MudDrawer>
+
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="mt-4 mb-8">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </Authorized>
+        <NotAuthorized>
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.Medium" Class="mt-10">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </NotAuthorized>
+    </AuthorizeView>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    private async Task OpenChangePasswordDialogAsync(ClaimsPrincipal user)
+    {
+        var userId = user.GetUserId();
+        if (!userId.HasValue)
+            return;
+
+        var parameters = new DialogParameters<ChangeOwnPasswordDialog>
+        {
+            { x => x.UserId, userId.Value },
+        };
+
+        await DialogService.ShowAsync<ChangeOwnPasswordDialog>("Смена пароля", parameters);
+    }
+}

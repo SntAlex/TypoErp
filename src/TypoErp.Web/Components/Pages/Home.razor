@@ -1,0 +1,128 @@
+﻿@page "/"
+@attribute [Authorize]
+
+<PageTitle>Обзор — TypoErp</PageTitle>
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        <MudText Typo="Typo.h4" Class="mb-4">Добро пожаловать, @auth.User.GetDisplayName()!</MudText>
+
+        <MudGrid>
+            @if (auth.User.HasPermission(AppPermission.ProductsView))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Elevation="2" Class="h-100">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="Color.Primary">
+                                    <MudIcon Icon="@Icons.Material.Filled.Inventory2" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Товары</MudText>
+                                <MudText Typo="Typo.caption">Файловое хранилище и PostgreSQL</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2">
+                                Управление артикулами, первичными и непервичными тегами, категориями, форматами и синхронизацией с диском.
+                            </MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Href="/products" Variant="Variant.Text" Color="Color.Primary">
+                                Открыть раздел
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.AssemblyView))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Elevation="2" Class="h-100">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="Color.Secondary">
+                                    <MudIcon Icon="@Icons.Material.Filled.BuildCircle" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Сборка</MudText>
+                                <MudText Typo="Typo.caption">Производственные задания</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2">
+                                Подготовка макетов и формирование заданий на печать и сборку.
+                            </MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Href="/assembly" Variant="Variant.Text" Color="Color.Secondary">
+                                Открыть раздел
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.MarketplacesView))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Elevation="2" Class="h-100">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="Color.Tertiary">
+                                    <MudIcon Icon="@Icons.Material.Filled.Storefront" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Маркетплейсы</MudText>
+                                <MudText Typo="Typo.caption">Карточки и интеграции</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2">
+                                Синхронизация карточек товаров, медиафайлов и остатков с маркетплейсами.
+                            </MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Href="/marketplaces" Variant="Variant.Text" Color="Color.Tertiary">
+                                Открыть раздел
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.UsersManage))
+            {
+                <MudItem xs="12" sm="6" md="3">
+                    <MudCard Elevation="2" Class="h-100">
+                        <MudCardHeader>
+                            <CardHeaderAvatar>
+                                <MudAvatar Color="Color.Warning">
+                                    <MudIcon Icon="@Icons.Material.Filled.People" />
+                                </MudAvatar>
+                            </CardHeaderAvatar>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Работники</MudText>
+                                <MudText Typo="Typo.caption">Учетные записи и права</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudText Typo="Typo.body2">
+                                Создание операторов, блокировка доступа и гранулярное делегирование разрешений.
+                            </MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Href="/users" Variant="Variant.Text" Color="Color.Warning">
+                                Управление правами
+                            </MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    </Authorized>
+</AuthorizeView>

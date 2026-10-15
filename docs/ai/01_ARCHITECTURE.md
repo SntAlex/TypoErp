@@ -28,8 +28,9 @@ TypoErp/
 │   │   ├── TypoErp.Modules.Products/     # Модуль Товаров (Core, Storage, Sync, Auto-Normalization, Postgres EF, LockService)
 │   │   ├── TypoErp.Modules.Assembly/     # Модуль Сборки (этап 2)
 │   │   └── TypoErp.Modules.Marketplaces/ # Модуль Маркетплейсов (этап 3)
-│   └── TypoErp.Web/                      # Хост-приложение Blazor Server (MudBlazor UI, DI, конфигурация)
+│   └── TypoErp.Web/                      # Хост-приложение Blazor Server (MudBlazor UI, DI, Cookie Auth, Workspace Lock Session)
 └── tests/
     ├── TypoErp.SharedKernel.Tests/
     ├── TypoErp.Modules.Identity.Tests/
-    └── TypoErp.Modules.Products.Tests/   # Unit и Integration тесты модуля товаров
+    ├── TypoErp.Modules.Products.Tests/   # Unit и Integration тесты модуля товаров
+    └── TypoErp.Web.Tests/                # Тесты авторизационных Claims и сессионного координатора блокировок Blazor Circuit

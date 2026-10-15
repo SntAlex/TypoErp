@@ -1,0 +1,428 @@
+@page "/users"
+@attribute [Authorize]
+@inject IUserManagementService UserManagementService
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<PageTitle>Работники и права доступа — TypoErp</PageTitle>
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @if (!auth.User.HasPermission(AppPermission.UsersManage))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">
+                У вас нет разрешения на управление работниками и правами доступа (<code>UsersManage</code>).
+            </MudAlert>
+        }
+        else
+        {
+            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-4">
+                <MudText Typo="Typo.h4">Работники и делегирование прав</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PersonAdd"
+                           OnClick="OpenCreatePanel">
+                    Добавить работника
+                </MudButton>
+            </MudStack>
+
+            @if (_isCreateOrEditOpen)
+            {
+                <MudPaper Elevation="3" Class="pa-6 mb-6">
+                    <MudText Typo="Typo.h6" Class="mb-3">
+                        @(_editingUserId.HasValue ? $"Редактирование работника «{_formUsername}»" : "Создание нового работника")
+                    </MudText>
+
+                    @if (!string.IsNullOrWhiteSpace(_formError))
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_formError</MudAlert>
+                    }
+
+                    <MudGrid>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_formUsername"
+                                          Label="Логин (без пробелов)"
+                                          Variant="Variant.Outlined"
+                                          Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudTextField @bind-Value="_formDisplayName"
+                                          Label="Отображаемое имя (ФИО)"
+                                          Variant="Variant.Outlined"
+                                          Required="true" />
+                        </MudItem>
+                        <MudItem xs="12" md="4">
+                            <MudSelect T="UserRole"
+                                       @bind-Value="_formRole"
+                                       Label="Роль в системе"
+                                       Variant="Variant.Outlined"
+                                       Disabled="@(!_actorIsAdmin)">
+                                <MudSelectItem Value="UserRole.Worker">Работник (Оператор)</MudSelectItem>
+                                <MudSelectItem Value="UserRole.Administrator">Администратор</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+
+                        @if (!_editingUserId.HasValue)
+                        {
+                            <MudItem xs="12" md="6">
+                                <MudTextField @bind-Value="_formPassword"
+                                              Label="Начальный пароль (не менее 6 символов)"
+                                              InputType="InputType.Password"
+                                              Variant="Variant.Outlined"
+                                              Required="true" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                    @if (_formRole == UserRole.Worker)
+                    {
+                        <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">
+                            <strong>Делегируемые гранулярные разрешения:</strong>
+                        </MudText>
+
+                        <MudGrid>
+                            @foreach (var group in AppPermissions.Definitions.GroupBy(d => d.GroupName))
+                            {
+                                <MudItem xs="12" md="6" lg="3">
+                                    <MudPaper Outlined="true" Class="pa-3 h-100">
+                                        <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="mb-2">
+                                            @group.Key
+                                        </MudText>
+                                        @foreach (var def in group)
+                                        {
+                                            var isChecked = _selectedPermissions.Contains(def.Permission);
+                                            <MudCheckBox T="bool"
+                                                         Value="@isChecked"
+                                                         ValueChanged="@((bool val) => TogglePermission(def.Permission, val))"
+                                                         Label="@def.DisplayName"
+                                                         Dense="true"
+                                                         Color="Color.Primary" />
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="d-block ml-7 mb-2">
+                                                @def.Description
+                                            </MudText>
+                                        }
+                                    </MudPaper>
+                                </MudItem>
+                            }
+                        </MudGrid>
+                    }
+                    else
+                    {
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mt-4">
+                            Администратор автоматически обладает всеми разрешениями системы, включая принудительный перехват блокировок.
+                        </MudAlert>
+                    }
+
+                    <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2" Class="mt-4">
+                        <MudButton Variant="Variant.Text" OnClick="CloseForm">Отмена</MudButton>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="SaveUserAsync">
+                            Сохранить
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+
+            @if (_resetPasswordTarget is not null)
+            {
+                <MudPaper Elevation="3" Class="pa-4 mb-4">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudText Typo="Typo.subtitle1">
+                            Сброс пароля для <strong>@_resetPasswordTarget.DisplayName</strong> (@_resetPasswordTarget.Username):
+                        </MudText>
+                        <MudTextField @bind-Value="_newResetPassword"
+                                      Placeholder="Новый пароль (от 6 символов)"
+                                      InputType="InputType.Password"
+                                      Margin="Margin.Dense"
+                                      Variant="Variant.Outlined" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ExecutePasswordResetAsync">
+                            Установить пароль
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" OnClick="@(() => _resetPasswordTarget = null)">
+                            Отмена
+                        </MudButton>
+                    </MudStack>
+                </MudPaper>
+            }
+
+            <MudTable Items="_users" Hover="true" Striped="true" Elevation="2">
+                <HeaderContent>
+                    <MudTh>Отображаемое имя</MudTh>
+                    <MudTh>Логин</MudTh>
+                    <MudTh>Роль</MudTh>
+                    <MudTh>Статус</MudTh>
+                    <MudTh>Действующие права</MudTh>
+                    <MudTh>Последний вход</MudTh>
+                    <MudTh>Действия</MudTh>
+                </HeaderContent>
+                <RowTemplate Context="userRow">
+                    <MudTd DataLabel="Имя"><strong>@userRow.DisplayName</strong></MudTd>
+                    <MudTd DataLabel="Логин"><code>@userRow.Username</code></MudTd>
+                    <MudTd DataLabel="Роль">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@(userRow.Role == UserRole.Administrator ? Color.Warning : Color.Default)">
+                            @(userRow.Role == UserRole.Administrator ? "Администратор" : "Работник")
+                        </MudChip>
+                    </MudTd>
+                    <MudTd DataLabel="Статус">
+                        @if (userRow.IsActive)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Success">Активен</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Заблокирован</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Права">
+                        @if (userRow.Role == UserRole.Administrator)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">
+                                Полный доступ (@AppPermissions.All.Count)
+                            </MudChip>
+                        }
+                        else if (userRow.Permissions.Count == 0)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">Нет прав</MudText>
+                        }
+                        else
+                        {
+                            @foreach (var perm in userRow.Permissions)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="mr-1 mb-1">
+                                    @GetPermissionShortTitle(perm)
+                                </MudChip>
+                            }
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Последний вход">
+                        @(userRow.LastLoginAtUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm") ?? "—")
+                    </MudTd>
+                    <MudTd DataLabel="Действия">
+                        <MudStack Row="true" Spacing="1">
+                            <MudTooltip Text="Редактировать профиль и права">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                               Size="Size.Small"
+                                               Color="Color.Primary"
+                                               OnClick="@(() => OpenEditPanel(userRow))" />
+                            </MudTooltip>
+
+                            <MudTooltip Text="Сбросить пароль">
+                                <MudIconButton Icon="@Icons.Material.Filled.LockReset"
+                                               Size="Size.Small"
+                                               Color="Color.Warning"
+                                               OnClick="@(() => OpenResetPassword(userRow))" />
+                            </MudTooltip>
+
+                            @if (userRow.Id != _actorUserId)
+                            {
+                                <MudTooltip Text="@(userRow.IsActive ? "Заблокировать вход" : "Разблокировать вход")">
+                                    <MudIconButton Icon="@(userRow.IsActive ? Icons.Material.Filled.Block : Icons.Material.Filled.CheckCircle)"
+                                                   Size="Size.Small"
+                                                   Color="@(userRow.IsActive ? Color.Error : Color.Success)"
+                                                   OnClick="@(() => ToggleUserActiveAsync(userRow))" />
+                                </MudTooltip>
+
+                                <MudTooltip Text="Удалить учетную запись">
+                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline"
+                                                   Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   OnClick="@(() => DeleteUserAsync(userRow))" />
+                                </MudTooltip>
+                            }
+                        </MudStack>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </Authorized>
+</AuthorizeView>
+
+@code {
+    private IReadOnlyList<AppUser> _users = [];
+    private Guid _actorUserId;
+    private bool _actorIsAdmin;
+
+    private bool _isCreateOrEditOpen;
+    private Guid? _editingUserId;
+    private string _formUsername = string.Empty;
+    private string _formDisplayName = string.Empty;
+    private string _formPassword = string.Empty;
+    private UserRole _formRole = UserRole.Worker;
+    private HashSet<AppPermission> _selectedPermissions = [];
+    private string? _formError;
+
+    private AppUser? _resetPasswordTarget;
+    private string _newResetPassword = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _actorUserId = authState.User.GetUserId() ?? Guid.Empty;
+        _actorIsAdmin = authState.User.IsAdministrator();
+
+        if (authState.User.HasPermission(AppPermission.UsersManage))
+            await ReloadUsersAsync();
+    }
+
+    private async Task ReloadUsersAsync()
+    {
+        _users = await UserManagementService.GetAllUsersAsync();
+    }
+
+    private void OpenCreatePanel()
+    {
+        _editingUserId = null;
+        _formUsername = string.Empty;
+        _formDisplayName = string.Empty;
+        _formPassword = string.Empty;
+        _formRole = UserRole.Worker;
+        _selectedPermissions = [AppPermission.ProductsView];
+        _formError = null;
+        _isCreateOrEditOpen = true;
+    }
+
+    private void OpenEditPanel(AppUser user)
+    {
+        _editingUserId = user.Id;
+        _formUsername = user.Username;
+        _formDisplayName = user.DisplayName;
+        _formPassword = string.Empty;
+        _formRole = user.Role;
+        _selectedPermissions = user.Permissions.ToHashSet();
+        _formError = null;
+        _isCreateOrEditOpen = true;
+    }
+
+    private void CloseForm()
+    {
+        _isCreateOrEditOpen = false;
+        _formError = null;
+    }
+
+    private void TogglePermission(AppPermission permission, bool isGranted)
+    {
+        if (isGranted)
+            _selectedPermissions.Add(permission);
+        else
+            _selectedPermissions.Remove(permission);
+    }
+
+    private async Task SaveUserAsync()
+    {
+        _formError = null;
+        try
+        {
+            if (!_editingUserId.HasValue)
+            {
+                await UserManagementService.CreateUserAsync(
+                    _actorUserId,
+                    new CreateUserRequest(
+                        _formUsername,
+                        _formDisplayName,
+                        _formPassword,
+                        _formRole,
+                        _selectedPermissions.ToList()
+                    )
+                );
+                Snackbar.Add($"Работник «{_formDisplayName}» успешно создан.", Severity.Success);
+            }
+            else
+            {
+                await UserManagementService.UpdateUserAsync(
+                    _actorUserId,
+                    new UpdateUserRequest(_editingUserId.Value, _formUsername, _formDisplayName, _formRole)
+                );
+
+                if (_formRole == UserRole.Worker)
+                {
+                    await UserManagementService.SetUserPermissionsAsync(
+                        _actorUserId,
+                        _editingUserId.Value,
+                        _selectedPermissions
+                    );
+                }
+
+                Snackbar.Add($"Данные и права «{_formDisplayName}» обновлены.", Severity.Success);
+            }
+
+            _isCreateOrEditOpen = false;
+            await ReloadUsersAsync();
+        }
+        catch (IdentityManagementException ex)
+        {
+            _formError = ex.Message;
+        }
+    }
+
+    private void OpenResetPassword(AppUser user)
+    {
+        _resetPasswordTarget = user;
+        _newResetPassword = string.Empty;
+    }
+
+    private async Task ExecutePasswordResetAsync()
+    {
+        if (_resetPasswordTarget is null)
+            return;
+
+        try
+        {
+            await UserManagementService.ResetPasswordAsync(
+                _actorUserId,
+                _resetPasswordTarget.Id,
+                _newResetPassword
+            );
+            Snackbar.Add($"Пароль для «{_resetPasswordTarget.DisplayName}» успешно сброшен.", Severity.Success);
+            _resetPasswordTarget = null;
+            _newResetPassword = string.Empty;
+        }
+        catch (IdentityManagementException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task ToggleUserActiveAsync(AppUser user)
+    {
+        try
+        {
+            var targetStatus = !user.IsActive;
+            await UserManagementService.SetUserActiveStatusAsync(_actorUserId, user.Id, targetStatus);
+            Snackbar.Add(
+                targetStatus
+                    ? $"Учетная запись «{user.DisplayName}» активирована."
+                    : $"Учетная запись «{user.DisplayName}» заблокирована.",
+                Severity.Info
+            );
+            await ReloadUsersAsync();
+        }
+        catch (IdentityManagementException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteUserAsync(AppUser user)
+    {
+        try
+        {
+            await UserManagementService.DeleteUserAsync(_actorUserId, user.Id);
+            Snackbar.Add($"Учетная запись «{user.DisplayName}» удалена.", Severity.Info);
+            await ReloadUsersAsync();
+        }
+        catch (IdentityManagementException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private static string GetPermissionShortTitle(AppPermission permission)
+    {
+        return AppPermissions.Definitions.FirstOrDefault(d => d.Permission == permission)?.DisplayName
+            ?? permission.ToString();
+    }
+}

@@ -1,0 +1,29 @@
+@page "/products"
+@attribute [Authorize]
+
+<PageTitle>Товары — TypoErp</PageTitle>
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @if (!auth.User.HasPermission(AppPermission.ProductsView))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">
+                У вас отсутствует разрешение на просмотр раздела «Товары» (<code>ProductsView</code>).
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.h4" Class="mb-3">Раздел «Товары»</MudText>
+
+            <ProductsWorkspaceLockBanner OnLockStateChanged="StateHasChanged" />
+
+            <MudPaper Elevation="1" Class="pa-6">
+                <MudText Typo="Typo.h6" Class="mb-2">Рабочая область товаров</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    Сессионная блокировка и реактивное оповещение при перехвате управления администратором активны.
+                    Таблица товаров (<code>MudDataGrid</code>), фильтрация и кнопка синхронизации подключаются в следующей итерации (6.2).
+                </MudText>
+            </MudPaper>
+        }
+    </Authorized>
+</AuthorizeView>

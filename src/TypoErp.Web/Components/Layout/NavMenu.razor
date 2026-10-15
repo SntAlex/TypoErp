@@ -1,0 +1,38 @@
+<AuthorizeView>
+    <Authorized Context="auth">
+        <MudNavMenu Class="pt-2">
+            <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+                Обзор системы
+            </MudNavLink>
+
+            @if (auth.User.HasPermission(AppPermission.ProductsView))
+            {
+                <MudNavLink Href="/products" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Inventory2">
+                    Товары
+                </MudNavLink>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.AssemblyView))
+            {
+                <MudNavLink Href="/assembly" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BuildCircle">
+                    Сборка
+                </MudNavLink>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.MarketplacesView))
+            {
+                <MudNavLink Href="/marketplaces" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Storefront">
+                    Маркетплейсы
+                </MudNavLink>
+            }
+
+            @if (auth.User.HasPermission(AppPermission.UsersManage))
+            {
+                <MudDivider Class="my-2" />
+                <MudNavLink Href="/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">
+                    Работники и права
+                </MudNavLink>
+            }
+        </MudNavMenu>
+    </Authorized>
+</AuthorizeView>

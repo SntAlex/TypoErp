@@ -1,0 +1,73 @@
+@page "/login"
+@attribute [AllowAnonymous]
+
+<PageTitle>Вход в систему — TypoErp</PageTitle>
+
+<MudPaper Elevation="4" Class="pa-8 mx-auto mt-12" Style="max-width: 440px;">
+    <MudStack Spacing="3">
+        <MudStack AlignItems="AlignItems.Center" Spacing="1">
+            <MudIcon Icon="@Icons.Material.Filled.Print" Color="Color.Primary" Size="Size.Large" />
+            <MudText Typo="Typo.h5"><strong>TypoErp</strong></MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                Внутренняя система автоматизации типографии
+            </MudText>
+        </MudStack>
+
+        @if (string.Equals(Error, "invalid", StringComparison.OrdinalIgnoreCase))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">
+                Неверный логин или пароль.
+            </MudAlert>
+        }
+        else if (string.Equals(Error, "deactivated", StringComparison.OrdinalIgnoreCase))
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true">
+                Ваша учетная запись деактивирована администратором.
+            </MudAlert>
+        }
+
+        <form action="/account/login" method="post">
+            <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+            <input type="hidden" name="username" value="@_username" />
+            <input type="hidden" name="password" value="@_password" />
+
+            <MudStack Spacing="3">
+                <MudTextField T="string"
+                              @bind-Value="_username"
+                              Immediate="true"
+                              Label="Логин"
+                              Variant="Variant.Outlined"
+                              Required="true"
+                              AutoFocus="true" />
+
+                <MudTextField T="string"
+                              @bind-Value="_password"
+                              Immediate="true"
+                              Label="Пароль"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Required="true" />
+
+                <MudButton ButtonType="ButtonType.Submit"
+                           Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Large"
+                           FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.Login">
+                    Войти
+                </MudButton>
+            </MudStack>
+        </form>
+    </MudStack>
+</MudPaper>
+
+@code {
+    private string _username = string.Empty;
+    private string _password = string.Empty;
+
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+}

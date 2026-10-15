@@ -1,0 +1,24 @@
+@page "/assembly"
+@attribute [Authorize]
+
+<PageTitle>Сборка — TypoErp</PageTitle>
+
+<AuthorizeView>
+    <Authorized Context="auth">
+        @if (!auth.User.HasPermission(AppPermission.AssemblyView))
+        {
+            <MudAlert Severity="Severity.Error" Variant="Variant.Filled">
+                У вас отсутствует разрешение на просмотр раздела «Сборка» (<code>AssemblyView</code>).
+            </MudAlert>
+        }
+        else
+        {
+            <MudText Typo="Typo.h4" Class="mb-3">Раздел «Сборка»</MudText>
+            <MudPaper Elevation="1" Class="pa-6">
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                    Модуль «Сборка» (<code>TypoErp.Modules.Assembly</code>) запланирован ко второму этапу разработки.
+                </MudAlert>
+            </MudPaper>
+        }
+    </Authorized>
+</AuthorizeView>

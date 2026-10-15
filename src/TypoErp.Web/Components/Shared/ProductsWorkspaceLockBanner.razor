@@ -1,0 +1,202 @@
+@implements IDisposable
+@inject IProductsWorkspaceCircuitSession WorkspaceSession
+@inject IProductStorage ProductStorage
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="2" Class="pa-4 mb-4">
+    @if (!_isStorageRootAccessible)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-3">
+            <strong>Хранилище товаров недоступно!</strong> Корневой путь хранилища на диске не существует или к нему нет доступа.
+            Все операции с товарами и синхронизация заблокированы до восстановления доступа к диску.
+        </MudAlert>
+    }
+
+    @if (WorkspaceSession.TakeoverAlert is { } alert)
+    {
+        <MudAlert Severity="Severity.Error"
+                  Variant="Variant.Filled"
+                  ShowCloseIcon="true"
+                  CloseIconClicked="DismissAlert"
+                  Class="mb-3">
+            <MudText Typo="Typo.subtitle1">
+                <strong>Внимание! Управление разделом «Товары» принудительно перехвачено!</strong>
+            </MudText>
+            <MudText Typo="Typo.body2">
+                Администратор <strong>@alert.TakenOverByDisplayName</strong> перехватил блокировку раздела
+                в @alert.TakenOverAtUtc.ToLocalTime().ToString("HH:mm:ss").
+                @if (!string.IsNullOrWhiteSpace(alert.Reason))
+                {
+                    <span> Причина: <em>«@alert.Reason»</em>.</span>
+                }
+                Ваша сессия переведена в <strong>режим только для чтения</strong>, все операции записи заблокированы.
+            </MudText>
+        </MudAlert>
+    }
+
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            @if (WorkspaceSession.IsHoldingLock && WorkspaceSession.CurrentLock is { } myLock)
+            {
+                <MudChip T="string" Color="Color.Success" Icon="@Icons.Material.Filled.LockOpen" Variant="Variant.Filled">
+                    Режим редактирования активен
+                </MudChip>
+                <MudText Typo="Typo.body2">
+                    Вы удерживаете блокировку раздела с @myLock.AcquiredAtUtc.ToLocalTime().ToString("HH:mm:ss").
+                </MudText>
+            }
+            else if (WorkspaceSession.CurrentLock is { } otherLock)
+            {
+                <MudChip T="string" Color="Color.Warning" Icon="@Icons.Material.Filled.Lock" Variant="Variant.Filled">
+                    Раздел занят (Только чтение)
+                </MudChip>
+                <MudText Typo="Typo.body2">
+                    Сейчас работает: <strong>@otherLock.UserDisplayName</strong>
+                    (с @otherLock.AcquiredAtUtc.ToLocalTime().ToString("HH:mm:ss")).
+                </MudText>
+            }
+            else
+            {
+                <MudChip T="string" Color="Color.Info" Icon="@Icons.Material.Filled.Visibility" Variant="Variant.Outlined">
+                    Режим просмотра
+                </MudChip>
+                <MudText Typo="Typo.body2">
+                    Раздел свободен. Займите блокировку для создания, редактирования или синхронизации товаров.
+                </MudText>
+            }
+        </MudStack>
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            @if (WorkspaceSession.IsHoldingLock)
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.LockReset"
+                           OnClick="ReleaseLock">
+                    Освободить раздел
+                </MudButton>
+            }
+            else if (WorkspaceSession.CurrentLock is null)
+            {
+                @if (_canEditOrSync && _isStorageRootAccessible)
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Edit"
+                               OnClick="AcquireLock">
+                        Занять раздел для работы
+                    </MudButton>
+                }
+            }
+            else if (_canForceTakeover && _isStorageRootAccessible)
+            {
+                <MudTextField @bind-Value="_takeoverReason"
+                              Placeholder="Причина перехвата (необязательно)"
+                              Margin="Margin.Dense"
+                              Variant="Variant.Outlined"
+                              Style="min-width: 260px;" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.WarningAmber"
+                           OnClick="ForceTakeoverLock">
+                    Перехватить управление
+                </MudButton>
+            }
+        </MudStack>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter]
+    public EventCallback OnLockStateChanged { get; set; }
+
+    private Guid? _userId;
+    private string _userDisplayName = string.Empty;
+    private bool _canEditOrSync;
+    private bool _canForceTakeover;
+    private bool _isStorageRootAccessible = true;
+    private string _takeoverReason = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceSession.StateChanged += HandleWorkspaceSessionStateChanged;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        _userId = user.GetUserId();
+        _userDisplayName = user.GetDisplayName();
+        _canEditOrSync = user.CanEditOrSyncProducts();
+        _canForceTakeover = user.CanForceTakeoverProductsLock();
+
+        _isStorageRootAccessible = await ProductStorage.IsRootAccessibleAsync();
+    }
+
+    private void AcquireLock()
+    {
+        if (!_userId.HasValue)
+            return;
+
+        var result = WorkspaceSession.TryAcquire(_userId.Value, _userDisplayName);
+        if (result.IsAcquired)
+        {
+            Snackbar.Add("Вы заняли раздел «Товары» для редактирования и синхронизации.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(
+                $"Раздел уже занят работником «{result.CurrentLock.UserDisplayName}».",
+                Severity.Warning
+            );
+        }
+    }
+
+    private void ReleaseLock()
+    {
+        if (WorkspaceSession.Release())
+            Snackbar.Add("Блокировка раздела «Товары» освобождена.", Severity.Info);
+    }
+
+    private void ForceTakeoverLock()
+    {
+        if (!_userId.HasValue || !_canForceTakeover)
+            return;
+
+        var result = WorkspaceSession.ForceTakeover(_userId.Value, _userDisplayName, _takeoverReason);
+        _takeoverReason = string.Empty;
+
+        if (result.WasTakenOverFromAnotherSession && result.PreviousLock is not null)
+        {
+            Snackbar.Add(
+                $"Управление разделом перехвачено у работника «{result.PreviousLock.UserDisplayName}».",
+                Severity.Warning
+            );
+        }
+        else
+        {
+            Snackbar.Add("Управление разделом «Товары» получено.", Severity.Success);
+        }
+    }
+
+    private void DismissAlert()
+    {
+        WorkspaceSession.DismissTakeoverAlert();
+    }
+
+    private void HandleWorkspaceSessionStateChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (OnLockStateChanged.HasDelegate)
+                await OnLockStateChanged.InvokeAsync();
+
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        WorkspaceSession.StateChanged -= HandleWorkspaceSessionStateChanged;
+    }
+}
