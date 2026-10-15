@@ -1,8 +1,8 @@
 # План разработки и текущее состояние (Roadmap & State — TypoErp)
 
 ## Текущий статус
-- **Этап:** Фаза 1 и Фаза 2 полностью завершены. В Фазе 3 выполнена **Итерация 3.1** — реализован `ProductsDbContext`, сущности `PrimaryTag`, `Category`, `Format`, `SecondaryTag`, `Product`, `ProductFile`, конфигурации `IEntityTypeConfiguration<T>` и реляционные тесты `ProductsDbContextTests`.
-- **Следующий шаг:** **Итерация 3.2** (Фаза 3) — Движок синхронизации `ProductSyncService` + тесты (авто-нормализация папок и файлов в `IProductStorage` с фиксацией `NormalizationConflict`, чтение/создание `.typoerp_id`, diff-сверка по `XxHash64`, автоматический вывод и Soft Delete / восстановление категорий и форматов, сохранение валидных и невалидных товаров в БД).
+- **Этап:** Фаза 1 и Фаза 2 полностью завершены. В Фазе 3 выполнены **Итерация 3.1** и **Итерация 3.2** — реализован движок синхронизации `ProductSyncService` (`IProductSyncService`, `ProductSyncResult`) и интеграционные тесты `ProductSyncServiceTests`.
+- **Следующий шаг:** **Итерация 3.3** (Фаза 3) — Сервис управления товарами `ProductManagementService` + тесты (создание товаров и черновиков, редактирование и починка невалидных товаров с переименованием на диске и diff-обновлением файлов, Bulk CRUD операции, управление `DisplayName` категорий, форматами и непервичными тегами).
 
 ---
 
@@ -18,9 +18,9 @@
 
 ### Фаза 3: Слой PostgreSQL и Движок Синхронизации (Sync & CRUD Engine)
 - [x] **Итерация 3.1:** EF Core `ProductsDbContext`: сущности `Product` (с `IsValid` и списком ошибок), `PrimaryTag`, `Category` (с `DisplayName` и `IsDeleted`), `Format` (привязан к `CategoryId`, уникальный по `(CategoryId, Code)`, с `IsDeleted`), `SecondaryTag` (связи с Product, Format, Category), `ProductFile` (с `XxHash64`) + тесты маппинга и ограничений БД.
-- [ ] **Итерация 3.2:** Движок синхронизации `ProductSyncService` + тесты:
+- [x] **Итерация 3.2:** Движок синхронизации `ProductSyncService` + тесты:
   - Автоматическая нормализация имен папок первичных тегов, артикулов и файлов в `IProductStorage` (с фиксацией ошибок `NormalizationConflict` при коллизиях).
-  - Чтение/создание `.typoerp_id` (`ProductId`).
+  - Чтение/создание `.typoerp_id` (`ProductId`), включая защиту от дублирования при копировании папки на диске.
   - Diff-сверка файлов по `XxHash64`, автоматический вывод категорий и форматов (и их Soft Delete / восстановление при изменениях).
   - Сохранение как валидных, так и невалидных товаров в Postgres.
 - [ ] **Итерация 3.3:** Сервис управления товарами `ProductManagementService` + тесты:

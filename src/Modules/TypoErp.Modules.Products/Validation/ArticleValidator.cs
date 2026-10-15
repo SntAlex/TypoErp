@@ -34,9 +34,15 @@ public static class ArticleValidator
         {
             var firstSpaceIndex = normalized.IndexOf(' ');
             if (firstSpaceIndex <= 0)
+            {
                 errors.Add(ProductValidationError.ArticleMissingSpace);
+            }
             else
-                formatCode = normalized[..firstSpaceIndex];
+            {
+                var candidateFormat = normalized[..firstSpaceIndex];
+                if (FileSystemNameValidator.IsValid(candidateFormat))
+                    formatCode = candidateFormat;
+            }
         }
 
         return new ArticleValidationResult(normalized, formatCode, errors);

@@ -849,6 +849,22 @@ public sealed class FakeProductStorage : IProductStorage
         }
     }
 
+    /// <summary>
+    ///     Вспомогательный метод для тестов: удаляет файл из корня хранилища.
+    /// </summary>
+    public bool RemoveRootFile(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+            return false;
+
+        lock (_syncRoot)
+        {
+            return _rootFiles.RemoveAll(f =>
+                    string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase)
+                ) > 0;
+        }
+    }
+
     private void EnsureRootAccessible()
     {
         if (!IsRootAccessible)
