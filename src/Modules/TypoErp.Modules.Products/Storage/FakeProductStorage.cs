@@ -433,12 +433,20 @@ public sealed class FakeProductStorage : IProductStorage
 
             var targetTag = FindPrimaryTag(targetPrimaryTagName);
             if (ReferenceEquals(sourceTag, targetTag))
+            {
+                if (
+                    !string.Equals(sourceTag.Name, targetPrimaryTagName, StringComparison.Ordinal)
+                    && sourceTag.Products.Count == 1
+                )
+                    sourceTag.Name = targetPrimaryTagName;
+
                 return RenameProductDirectoryAsync(
-                    sourcePrimaryTagName,
+                    sourceTag.Name,
                     sourceArticleName,
                     targetArticleName,
                     cancellationToken
                 );
+            }
 
             if (targetTag is null)
             {
@@ -648,6 +656,9 @@ public sealed class FakeProductStorage : IProductStorage
     )
     {
         ArgumentNullException.ThrowIfNull(content);
+        if (content.CanSeek && content.Position != 0)
+            content.Position = 0;
+
         using var ms = new MemoryStream();
         await content.CopyToAsync(ms, cancellationToken);
         return await WriteProductFileAsync(

@@ -375,6 +375,66 @@ public sealed class ProductManagementServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateProductAsync_WhenDeletingFileAndRenamingAnotherFileToDeletedName_ShouldSucceedWithoutDuplicateKeyConflict()
+    {
+        await _storage.CreateProductDirectoryAsync("тег", "45к замена файла");
+        await _storage.WriteProductFileAsync(
+            "тег",
+            "45к замена файла",
+            "card 1.pdf",
+            "old-version"u8.ToArray()
+        );
+        await _storage.WriteProductFileAsync(
+            "тег",
+            "45к замена файла",
+            "card  1.pdf",
+            "new-version"u8.ToArray()
+        );
+
+        Guid productId;
+        await using (var syncDb = CreateDbContext())
+        {
+            var syncService = new ProductSyncService(
+                syncDb,
+                _storage,
+                _lockService,
+                _options,
+                _timeProvider
+            );
+            await syncService.SynchronizeAsync(WorkerSessionId);
+            productId = (await syncDb.Products.SingleAsync()).Id;
+        }
+
+        await using (var updateDb = CreateDbContext())
+        {
+            var service = CreateManagementService(updateDb);
+            var result = await service.UpdateProductAsync(
+                WorkerSessionId,
+                new UpdateProductRequest(
+                    productId,
+                    "тег",
+                    "45к замена файла",
+                    FilesToDelete: ["card 1.pdf"],
+                    FileRenames: [new ProductFileRenameInput("card  1.pdf", "card 1.pdf")]
+                )
+            );
+
+            result.IsValid.ShouldBeTrue();
+            result.DeletedFilesCount.ShouldBe(1);
+        }
+
+        await using (var verifyDb = CreateDbContext())
+        {
+            var files = await verifyDb
+                .ProductFiles.Where(f => f.ProductId == productId)
+                .ToListAsync();
+            var singleFile = files.ShouldHaveSingleItem();
+            singleFile.FileName.ShouldBe("card 1.pdf");
+            singleFile.XxHash64.ShouldBe(ProductFileHasher.Compute("new-version"u8).HashHex);
+        }
+    }
+
+    [Fact]
     public async Task UpdateProductAsync_ShouldPerformXxHash64DiffAndSkipUnchangedFiles()
     {
         Guid productId;

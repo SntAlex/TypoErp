@@ -388,7 +388,7 @@ public sealed class ProductManagementService : IProductManagementService
         var addedOrUpdatedFilesCount = 0;
         var unchangedFilesCount = 0;
 
-        // 3. Удаление указанных файлов с диска
+        // 3. Удаление указанных файлов с диска и сразу из отслеживаемой коллекции Product.Files
         if (request.FilesToDelete is not null)
         {
             foreach (var rawFileToDelete in request.FilesToDelete)
@@ -408,7 +408,27 @@ public sealed class ProductManagementService : IProductManagementService
                         cancellationToken
                     )
                 )
+                {
                     deletedFilesCount++;
+
+                    var trackedToDelete =
+                        product.Files.FirstOrDefault(f =>
+                            string.Equals(f.FileName, fileToDelete, StringComparison.Ordinal)
+                        )
+                        ?? product.Files.FirstOrDefault(f =>
+                            string.Equals(
+                                f.FileName,
+                                fileToDelete,
+                                StringComparison.OrdinalIgnoreCase
+                            )
+                        );
+
+                    if (trackedToDelete is not null)
+                    {
+                        product.Files.Remove(trackedToDelete);
+                        _dbContext.ProductFiles.Remove(trackedToDelete);
+                    }
+                }
             }
         }
 
@@ -440,14 +460,17 @@ public sealed class ProductManagementService : IProductManagementService
                 );
             }
 
-            var trackedFile = product.Files.FirstOrDefault(f =>
-                string.Equals(f.FileName, rename.CurrentFileName, StringComparison.Ordinal)
-                || string.Equals(
-                    f.FileName,
-                    rename.CurrentFileName,
-                    StringComparison.OrdinalIgnoreCase
+            var trackedFile =
+                product.Files.FirstOrDefault(f =>
+                    string.Equals(f.FileName, rename.CurrentFileName, StringComparison.Ordinal)
                 )
-            );
+                ?? product.Files.FirstOrDefault(f =>
+                    string.Equals(
+                        f.FileName,
+                        rename.CurrentFileName,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
 
             if (trackedFile is not null)
             {
@@ -487,13 +510,20 @@ public sealed class ProductManagementService : IProductManagementService
                     )
                 )
                 {
-                    await _storage.RenameProductFileAsync(
+                    var renameSameContent = await _storage.RenameProductFileAsync(
                         targetPrimaryTag,
                         targetArticle,
                         existingOnDisk.FileName,
                         upload.NormalizedFileName,
                         cancellationToken
                     );
+
+                    if (renameSameContent.IsSuccess)
+                        UpdateTrackedFileNameIfPresent(
+                            product,
+                            existingOnDisk.FileName,
+                            renameSameContent.FinalName
+                        );
                 }
 
                 unchangedFilesCount++;
@@ -510,13 +540,20 @@ public sealed class ProductManagementService : IProductManagementService
                 )
             )
             {
-                await _storage.RenameProductFileAsync(
+                var renameBeforeWrite = await _storage.RenameProductFileAsync(
                     targetPrimaryTag,
                     targetArticle,
                     existingOnDisk.FileName,
                     upload.NormalizedFileName,
                     cancellationToken
                 );
+
+                if (renameBeforeWrite.IsSuccess)
+                    UpdateTrackedFileNameIfPresent(
+                        product,
+                        existingOnDisk.FileName,
+                        renameBeforeWrite.FinalName
+                    );
             }
 
             using var stream = new MemoryStream(upload.Content, writable: false);
@@ -568,9 +605,14 @@ public sealed class ProductManagementService : IProductManagementService
                     );
 
                     if (renameRes.IsSuccess)
+                    {
                         actualFileName = renameRes.FinalName;
+                        UpdateTrackedFileNameIfPresent(product, diskFile.FileName, actualFileName);
+                    }
                     else
+                    {
                         hasFileNormalizationConflict = true;
+                    }
                 }
             }
 
@@ -1537,6 +1579,30 @@ public sealed class ProductManagementService : IProductManagementService
         return result;
     }
 
+    private static void UpdateTrackedFileNameIfPresent(
+        Product product,
+        string previousFileName,
+        string newFileName
+    )
+    {
+        if (string.Equals(previousFileName, newFileName, StringComparison.Ordinal))
+            return;
+
+        var tracked =
+            product.Files.FirstOrDefault(f =>
+                string.Equals(f.FileName, previousFileName, StringComparison.Ordinal)
+            )
+            ?? product.Files.FirstOrDefault(f =>
+                string.Equals(f.FileName, previousFileName, StringComparison.OrdinalIgnoreCase)
+            );
+
+        if (tracked is not null)
+        {
+            tracked.FileName = newFileName;
+            tracked.NormalizedFileName = StringNormalizer.NormalizeFileName(newFileName);
+        }
+    }
+
     private async Task<PrimaryTag> GetOrCreatePrimaryTagEntityAsync(
         string normalizedPrimaryTagName,
         DateTimeOffset now,
@@ -1550,6 +1616,21 @@ public sealed class ProductManagementService : IProductManagementService
 
         if (existing is not null)
             return existing;
+
+        var candidatesByNormalized = await _dbContext
+            .PrimaryTags.Where(t => t.NormalizedName == normalizedPrimaryTagName)
+            .ToListAsync(cancellationToken);
+
+        if (candidatesByNormalized.Count == 1)
+        {
+            var singleCandidate = candidatesByNormalized[0];
+            var allTagsOnDisk = await _storage.GetPrimaryTagDirectoriesAsync(cancellationToken);
+            if (!allTagsOnDisk.Contains(singleCandidate.Name, StringComparer.Ordinal))
+            {
+                singleCandidate.UpdateName(normalizedPrimaryTagName, now);
+                return singleCandidate;
+            }
+        }
 
         var created = new PrimaryTag(normalizedPrimaryTagName, now);
         _dbContext.PrimaryTags.Add(created);
