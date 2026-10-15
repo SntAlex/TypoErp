@@ -42,6 +42,40 @@ public sealed class FakeProductStorageTests
     }
 
     [Fact]
+    public async Task CreateAndWriteOperations_WhenCalledWithDifferentCasing_ShouldNotCreateCaseDuplicates()
+    {
+        var storage = new FakeProductStorage();
+
+        await storage.CreatePrimaryTagDirectoryAsync("МОЙ ТЕГ");
+        await storage.CreatePrimaryTagDirectoryAsync("мой тег");
+
+        var tags = await storage.GetPrimaryTagDirectoriesAsync();
+        tags.ShouldHaveSingleItem().ShouldBe("МОЙ ТЕГ");
+
+        await storage.CreateProductDirectoryAsync("мой тег", "45К АРТИКУЛ");
+        await storage.CreateProductDirectoryAsync("МОЙ ТЕГ", "45к артикул");
+
+        var products = await storage.GetProductDirectoriesAsync("мой тег");
+        products.ShouldHaveSingleItem().ShouldBe("45К АРТИКУЛ");
+
+        await storage.WriteProductFileAsync(
+            "мой тег",
+            "45к артикул",
+            "CARD_1.PDF",
+            "v1"u8.ToArray()
+        );
+        await storage.WriteProductFileAsync(
+            "мой тег",
+            "45к артикул",
+            "card_1.pdf",
+            "v2-updated"u8.ToArray()
+        );
+
+        var files = await storage.GetProductFilesAsync("мой тег", "45к артикул");
+        files.ShouldHaveSingleItem().SizeBytes.ShouldBe("v2-updated"u8.Length);
+    }
+
+    [Fact]
     public async Task RenamePrimaryTagDirectoryAsync_WhenChangingCaseOnly_ShouldSucceedWithoutCollision()
     {
         var storage = new FakeProductStorage();

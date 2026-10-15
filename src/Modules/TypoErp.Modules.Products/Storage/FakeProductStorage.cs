@@ -98,7 +98,7 @@ public sealed class FakeProductStorage : IProductStorage
         lock (_syncRoot)
         {
             EnsureRootAccessible();
-            if (FindPrimaryTagExact(primaryTagName) is null)
+            if (FindPrimaryTag(primaryTagName) is null)
             {
                 _primaryTags.Add(new PrimaryTagNode(primaryTagName));
                 _logger.LogInformation(
@@ -283,7 +283,7 @@ public sealed class FakeProductStorage : IProductStorage
                 _primaryTags.Add(tag);
             }
 
-            if (FindProductExact(tag, articleName) is null)
+            if (FindProduct(tag, articleName) is null)
             {
                 tag.Products.Add(new ProductNode(articleName));
                 _logger.LogInformation(
@@ -678,7 +678,7 @@ public sealed class FakeProductStorage : IProductStorage
         {
             EnsureRootAccessible();
             var product = GetRequiredProduct(primaryTagName, articleName);
-            var existing = FindFileExact(product, fileName);
+            var existing = FindFile(product, fileName);
 
             if (existing is not null)
             {
