@@ -64,6 +64,8 @@ public sealed class ProductSyncService : IProductSyncService
             );
         }
 
+        _dbContext.ChangeTracker.Clear();
+
         var now = _timeProvider.GetUtcNow();
         var autoNormalizedItemsCount = 0;
         var normalizationConflictsCount = 0;

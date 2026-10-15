@@ -58,6 +58,7 @@ public sealed class ProductManagementService : IProductManagementService
         ArgumentNullException.ThrowIfNull(request);
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var primaryTagValidation = PrimaryTagValidator.Validate(request.PrimaryTagName, _options);
         if (!primaryTagValidation.IsValid)
@@ -241,6 +242,7 @@ public sealed class ProductManagementService : IProductManagementService
         ArgumentNullException.ThrowIfNull(request);
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var product = await _dbContext
             .Products.Include(p => p.PrimaryTag)
@@ -795,6 +797,7 @@ public sealed class ProductManagementService : IProductManagementService
     {
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var product = await _dbContext
             .Products.Include(p => p.PrimaryTag)
@@ -849,6 +852,7 @@ public sealed class ProductManagementService : IProductManagementService
     {
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var primaryTag = await _dbContext
             .PrimaryTags.Include(t => t.Products)
@@ -938,6 +942,7 @@ public sealed class ProductManagementService : IProductManagementService
         ArgumentNullException.ThrowIfNull(productIds);
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var tagValidation = PrimaryTagValidator.Validate(targetPrimaryTagName, _options);
         if (!tagValidation.IsValid)
@@ -1100,6 +1105,7 @@ public sealed class ProductManagementService : IProductManagementService
         ArgumentNullException.ThrowIfNull(productIds);
         ArgumentNullException.ThrowIfNull(secondaryTagNames);
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var distinctIds = productIds.Distinct().ToList();
         if (distinctIds.Count == 0)
@@ -1188,6 +1194,7 @@ public sealed class ProductManagementService : IProductManagementService
         ArgumentNullException.ThrowIfNull(productIds);
         _lockService.EnsureHeldBySession(sessionId);
         await EnsureStorageRootAccessibleAsync(cancellationToken);
+        _dbContext.ChangeTracker.Clear();
 
         var distinctIds = productIds.Distinct().ToList();
         if (distinctIds.Count == 0)
@@ -1247,6 +1254,7 @@ public sealed class ProductManagementService : IProductManagementService
     )
     {
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var category = await _dbContext.Categories.FirstOrDefaultAsync(
             c => c.Id == categoryId,
@@ -1280,6 +1288,7 @@ public sealed class ProductManagementService : IProductManagementService
     {
         ArgumentNullException.ThrowIfNull(secondaryTagNames);
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var category = await _dbContext
             .Categories.Include(c => c.SecondaryTags)
@@ -1312,6 +1321,7 @@ public sealed class ProductManagementService : IProductManagementService
     {
         ArgumentNullException.ThrowIfNull(secondaryTagNames);
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var format = await _dbContext
             .Formats.Include(f => f.SecondaryTags)
@@ -1344,6 +1354,7 @@ public sealed class ProductManagementService : IProductManagementService
     {
         ArgumentNullException.ThrowIfNull(secondaryTagNames);
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var product = await _dbContext
             .Products.Include(p => p.SecondaryTags)
@@ -1374,6 +1385,7 @@ public sealed class ProductManagementService : IProductManagementService
     )
     {
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var normalized = NormalizeAndValidateSecondaryTagName(tagName);
         var existing = await _dbContext.SecondaryTags.FirstOrDefaultAsync(
@@ -1405,6 +1417,7 @@ public sealed class ProductManagementService : IProductManagementService
     )
     {
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var normalizedNewName = NormalizeAndValidateSecondaryTagName(newName);
         var tag = await _dbContext.SecondaryTags.FirstOrDefaultAsync(
@@ -1451,6 +1464,7 @@ public sealed class ProductManagementService : IProductManagementService
     )
     {
         _lockService.EnsureHeldBySession(sessionId);
+        _dbContext.ChangeTracker.Clear();
 
         var tag = await _dbContext.SecondaryTags.FirstOrDefaultAsync(
             t => t.Id == secondaryTagId,
