@@ -34,7 +34,10 @@ public sealed class StringNormalizerTests
     [InlineData("  My.Archive   V1.TAR.GZ ", "my.archive v1.tar.gz")]
     [InlineData(".", ".")]
     [InlineData("..", "..")]
-    public void NormalizeFileName_ShouldNormalizeNameAndExtensionSeparately(
+    [InlineData("card_1.pdf.", "card_1.pdf.")]
+    [InlineData("bad/card_1.PDF", "bad/card_1.pdf")]
+    [InlineData("bad\\card_1.PDF", "bad\\card_1.pdf")]
+    public void NormalizeFileName_ShouldNormalizeNameAndExtensionSeparatelyAcrossPlatforms(
         string? input,
         string expected
     )

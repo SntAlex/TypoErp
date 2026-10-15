@@ -120,7 +120,8 @@ public sealed class ProductFileClassifierTests
     [Theory]
     [InlineData("_leadingunderscore.pdf")]
     [InlineData("_only.cdr")]
-    public void Classify_WhenAssemblyFileHasEmptyPrefix_ShouldReturnInvalidAssemblyFilePrefixError(
+    [InlineData("bad:prefix_1.pdf")]
+    public void Classify_WhenAssemblyFileHasEmptyOrInvalidPrefix_ShouldReturnInvalidAssemblyFilePrefixError(
         string fileName
     )
     {
@@ -134,6 +135,8 @@ public sealed class ProductFileClassifierTests
     [Theory]
     [InlineData("card:1.pdf")]
     [InlineData("card?1.pdf")]
+    [InlineData("card/1.pdf")]
+    [InlineData("card\\1.pdf")]
     [InlineData("card_1.pdf.")]
     [InlineData("CON.pdf")]
     public void Classify_WhenFileNameIsInvalidForFileSystem_ShouldReturnInvalidFileNameError(

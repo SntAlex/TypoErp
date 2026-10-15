@@ -24,6 +24,7 @@ public static class ProductFileClassifier
         var opts = options ?? new ProductsStorageOptions();
         var trimmed = fileName?.Trim() ?? string.Empty;
         var normalizedFileName = StringNormalizer.NormalizeFileName(fileName);
+        var extension = ExtractExtension(normalizedFileName);
 
         if (IsIgnoredFile(trimmed, normalizedFileName, opts))
             return new ClassifiedProductFile(
@@ -31,7 +32,7 @@ public static class ProductFileClassifier
                 normalizedFileName,
                 ProductFileKind.Ignored,
                 string.Empty,
-                Path.GetExtension(normalizedFileName),
+                extension,
                 []
             );
 
@@ -45,7 +46,6 @@ public static class ProductFileClassifier
             errors.Add(ProductValidationError.InvalidFileName);
 
         var prefix = FilePrefixExtractor.ExtractPrefix(normalizedFileName);
-        var extension = Path.GetExtension(normalizedFileName);
 
         if (string.Equals(prefix, CoverPrefix, StringComparison.Ordinal))
         {
@@ -77,7 +77,7 @@ public static class ProductFileClassifier
             );
         }
 
-        if (string.IsNullOrEmpty(prefix))
+        if (string.IsNullOrEmpty(prefix) || !FileSystemNameValidator.IsValid(prefix))
             errors.Add(ProductValidationError.InvalidAssemblyFilePrefix);
 
         return new ClassifiedProductFile(
@@ -105,6 +105,15 @@ public static class ProductFileClassifier
             results.Add(Classify(fileName, opts));
 
         return results;
+    }
+
+    private static string ExtractExtension(string normalizedFileName)
+    {
+        if (string.IsNullOrEmpty(normalizedFileName) || normalizedFileName.EndsWith('.'))
+            return string.Empty;
+
+        var lastDotIndex = normalizedFileName.LastIndexOf('.');
+        return lastDotIndex >= 0 ? normalizedFileName[lastDotIndex..] : string.Empty;
     }
 
     private static bool IsIgnoredFile(

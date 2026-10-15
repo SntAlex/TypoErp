@@ -40,7 +40,8 @@ public static class StringNormalizer
     }
 
     /// <summary>
-    ///     Нормализует отдельно имя файла без расширения и его расширение.
+    ///     Нормализует отдельно имя файла без расширения и его расширение
+    ///     без использования платформозависимого парсинга разделителей пути.
     ///     Пример: "  Cover_1   (2).JPG " -> "cover_1 (2).jpg".
     /// </summary>
     public static string NormalizeFileName(string? fileName)
@@ -52,8 +53,18 @@ public static class StringNormalizer
         if (IsAllDots(trimmed))
             return trimmed;
 
-        var stem = Normalize(Path.GetFileNameWithoutExtension(trimmed));
-        var extension = Path.GetExtension(trimmed).Trim().ToLowerInvariant();
+        if (trimmed.EndsWith('.'))
+            return Normalize(trimmed[..^1]) + ".";
+
+        var lastDotIndex = trimmed.LastIndexOf('.');
+        if (lastDotIndex < 0)
+            return Normalize(trimmed);
+
+        if (lastDotIndex == 0)
+            return "." + Normalize(trimmed[1..]);
+
+        var stem = Normalize(trimmed[..lastDotIndex]);
+        var extension = Normalize(trimmed[lastDotIndex..]);
 
         return stem + extension;
     }

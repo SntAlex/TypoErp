@@ -23,11 +23,23 @@ public static class FilePrefixExtractor
         if (string.IsNullOrEmpty(normalizedFileName))
             return string.Empty;
 
-        var stem = Path.GetFileNameWithoutExtension(normalizedFileName);
+        var stem = ExtractStemWithoutExtension(normalizedFileName);
         if (string.IsNullOrEmpty(stem))
             return string.Empty;
 
         var delimiterIndex = stem.IndexOfAny(Delimiters);
         return delimiterIndex >= 0 ? stem[..delimiterIndex] : stem;
+    }
+
+    private static string ExtractStemWithoutExtension(string normalizedFileName)
+    {
+        var lastDotIndex = normalizedFileName.LastIndexOf('.');
+        if (lastDotIndex < 0)
+            return normalizedFileName;
+
+        if (lastDotIndex == 0)
+            return string.Empty;
+
+        return normalizedFileName[..lastDotIndex];
     }
 }

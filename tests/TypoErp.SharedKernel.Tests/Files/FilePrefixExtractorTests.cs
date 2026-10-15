@@ -17,6 +17,8 @@ public sealed class FilePrefixExtractorTests
     [InlineData("  Poster   A3_1.pdf ", "poster")]
     [InlineData("sticker_a4 1.pdf", "sticker")]
     [InlineData("singleword", "singleword")]
+    [InlineData("bad/prefix_1.pdf", "bad/prefix")]
+    [InlineData("bad\\prefix_1.pdf", "bad\\prefix")]
     public void ExtractPrefix_ShouldReturnNormalizedSubstringBeforeFirstSpaceOrUnderscore(
         string fileName,
         string expectedPrefix
