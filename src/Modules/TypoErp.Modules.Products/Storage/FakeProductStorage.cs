@@ -842,7 +842,9 @@ public sealed class FakeProductStorage : IProductStorage
 
         lock (_syncRoot)
         {
-            _rootFiles.RemoveAll(f => string.Equals(f.Name, fileName, StringComparison.Ordinal));
+            _rootFiles.RemoveAll(f =>
+                string.Equals(f.Name, fileName, StringComparison.OrdinalIgnoreCase)
+            );
             _rootFiles.Add(new FileNode(fileName, bytes, hash.SizeBytes, hash.HashHex));
         }
     }

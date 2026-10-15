@@ -1,8 +1,8 @@
 # План разработки и текущее состояние (Roadmap & State — TypoErp)
 
 ## Текущий статус
-- **Этап:** Фаза 1 и Фаза 2 полностью завершены и покрыты Unit-тестами (включая аудит и исправление регистронезависимой консистентности создания/записи в `FakeProductStorage`, а также реализацию `IProductsWorkspaceLockService` и `ProductsWorkspaceLockService` в **Итерации 2.2**).
-- **Следующий шаг:** **Итерация 3.1** (Фаза 3) — EF Core `ProductsDbContext`: сущности `Product` (с `IsValid` и списком ошибок), `PrimaryTag`, `Category` (с `DisplayName` и `IsDeleted`), `Format` (привязан к `CategoryId`, уникальный по `(CategoryId, Code)`, с `IsDeleted`), `SecondaryTag` (связи с Product, Format, Category), `ProductFile` (с `XxHash64`) + тесты маппинга и ограничений БД.
+- **Этап:** Фаза 1 и Фаза 2 полностью завершены. В Фазе 3 выполнена **Итерация 3.1** — реализован `ProductsDbContext`, сущности `PrimaryTag`, `Category`, `Format`, `SecondaryTag`, `Product`, `ProductFile`, конфигурации `IEntityTypeConfiguration<T>` и реляционные тесты `ProductsDbContextTests`.
+- **Следующий шаг:** **Итерация 3.2** (Фаза 3) — Движок синхронизации `ProductSyncService` + тесты (авто-нормализация папок и файлов в `IProductStorage` с фиксацией `NormalizationConflict`, чтение/создание `.typoerp_id`, diff-сверка по `XxHash64`, автоматический вывод и Soft Delete / восстановление категорий и форматов, сохранение валидных и невалидных товаров в БД).
 
 ---
 
@@ -17,7 +17,7 @@
 - [x] **Итерация 2.2:** Сервис блокировки раздела товаров `IProductsWorkspaceLockService` (захват сессионного лока работником, проверка состояния, принудительный перехват администратором `ForceTakeover` с уведомлением предыдущего работника через событие и блокировкой его работы) + Unit-тесты.
 
 ### Фаза 3: Слой PostgreSQL и Движок Синхронизации (Sync & CRUD Engine)
-- [ ] **Итерация 3.1:** EF Core `ProductsDbContext`: сущности `Product` (с `IsValid` и списком ошибок), `PrimaryTag`, `Category` (с `DisplayName` и `IsDeleted`), `Format` (привязан к `CategoryId`, уникальный по `(CategoryId, Code)`, с `IsDeleted`), `SecondaryTag` (связи с Product, Format, Category), `ProductFile` (с `XxHash64`).
+- [x] **Итерация 3.1:** EF Core `ProductsDbContext`: сущности `Product` (с `IsValid` и списком ошибок), `PrimaryTag`, `Category` (с `DisplayName` и `IsDeleted`), `Format` (привязан к `CategoryId`, уникальный по `(CategoryId, Code)`, с `IsDeleted`), `SecondaryTag` (связи с Product, Format, Category), `ProductFile` (с `XxHash64`) + тесты маппинга и ограничений БД.
 - [ ] **Итерация 3.2:** Движок синхронизации `ProductSyncService` + тесты:
   - Автоматическая нормализация имен папок первичных тегов, артикулов и файлов в `IProductStorage` (с фиксацией ошибок `NormalizationConflict` при коллизиях).
   - Чтение/создание `.typoerp_id` (`ProductId`).
