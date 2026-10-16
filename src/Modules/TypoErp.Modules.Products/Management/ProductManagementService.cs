@@ -276,8 +276,34 @@ public sealed class ProductManagementService : IProductManagementService
         var targetPrimaryTag = primaryTagValidation.NormalizedName;
         var targetArticle = articleValidation.NormalizedArticle;
 
-        var preparedRenames = ValidateAndPrepareRenames(request.FileRenames);
+        var filesToDeleteSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (request.FilesToDelete is not null)
+        {
+            foreach (var raw in request.FilesToDelete)
+            {
+                if (!string.IsNullOrWhiteSpace(raw) && !IsProductIdFile(raw.Trim()))
+                    filesToDeleteSet.Add(raw.Trim());
+            }
+        }
+
+        var preparedRenames = ValidateAndPrepareRenames(request.FileRenames, filesToDeleteSet);
         var preparedUploads = ValidateAndPrepareUploads(request.FilesToUpsert);
+
+        // Проверяем отсутствие другого товара с таким же нормализованным первичным тегом и артикулом в БД
+        var conflictingDbProductExists = await _dbContext.Products.AnyAsync(
+            p =>
+                p.Id != product.Id
+                && p.PrimaryTag != null
+                && p.PrimaryTag.NormalizedName == targetPrimaryTag
+                && p.NormalizedArticle == targetArticle,
+            cancellationToken
+        );
+
+        if (conflictingDbProductExists)
+            throw new ProductManagementException(
+                ProductManagementErrorCode.TargetAlreadyExists,
+                $"Товар с артикулом '{targetArticle}' уже существует в первичном теге '{targetPrimaryTag}'."
+            );
 
         var currentTagName = product.PrimaryTag?.Name;
         var currentArticleName = product.Article;
@@ -391,47 +417,31 @@ public sealed class ProductManagementService : IProductManagementService
         var unchangedFilesCount = 0;
 
         // 3. Удаление указанных файлов с диска и сразу из отслеживаемой коллекции Product.Files
-        if (request.FilesToDelete is not null)
+        foreach (var fileToDelete in filesToDeleteSet)
         {
-            foreach (var rawFileToDelete in request.FilesToDelete)
-            {
-                if (string.IsNullOrWhiteSpace(rawFileToDelete))
-                    continue;
+            var removedFromDisk = await _storage.DeleteProductFileAsync(
+                targetPrimaryTag,
+                targetArticle,
+                fileToDelete,
+                cancellationToken
+            );
 
-                var fileToDelete = rawFileToDelete.Trim();
-                if (IsProductIdFile(fileToDelete))
-                    continue;
-
-                if (
-                    await _storage.DeleteProductFileAsync(
-                        targetPrimaryTag,
-                        targetArticle,
-                        fileToDelete,
-                        cancellationToken
-                    )
+            var trackedToDelete =
+                product.Files.FirstOrDefault(f =>
+                    string.Equals(f.FileName, fileToDelete, StringComparison.Ordinal)
                 )
-                {
-                    deletedFilesCount++;
+                ?? product.Files.FirstOrDefault(f =>
+                    string.Equals(f.FileName, fileToDelete, StringComparison.OrdinalIgnoreCase)
+                );
 
-                    var trackedToDelete =
-                        product.Files.FirstOrDefault(f =>
-                            string.Equals(f.FileName, fileToDelete, StringComparison.Ordinal)
-                        )
-                        ?? product.Files.FirstOrDefault(f =>
-                            string.Equals(
-                                f.FileName,
-                                fileToDelete,
-                                StringComparison.OrdinalIgnoreCase
-                            )
-                        );
-
-                    if (trackedToDelete is not null)
-                    {
-                        product.Files.Remove(trackedToDelete);
-                        _dbContext.ProductFiles.Remove(trackedToDelete);
-                    }
-                }
+            if (trackedToDelete is not null)
+            {
+                product.Files.Remove(trackedToDelete);
+                _dbContext.ProductFiles.Remove(trackedToDelete);
             }
+
+            if (removedFromDisk || trackedToDelete is not null)
+                deletedFilesCount++;
         }
 
         // 4. Переименование существующих файлов на диске (например, починка конфликтных имен)
@@ -1542,7 +1552,8 @@ public sealed class ProductManagementService : IProductManagementService
     }
 
     private List<PreparedRename> ValidateAndPrepareRenames(
-        IReadOnlyList<ProductFileRenameInput>? renames
+        IReadOnlyList<ProductFileRenameInput>? renames,
+        HashSet<string> filesToDeleteSet
     )
     {
         if (renames is null || renames.Count == 0)
@@ -1560,6 +1571,12 @@ public sealed class ProductManagementService : IProductManagementService
                     ProductManagementErrorCode.InvalidFileName,
                     "Исходное имя переименовываемого файла не может быть пустым."
                 );
+
+            var currentTrimmed = rename.CurrentFileName.Trim();
+
+            // Если файл одновременно помечен на удаление, переименовывать его не нужно
+            if (filesToDeleteSet.Contains(currentTrimmed))
+                continue;
 
             var trimmedNew = rename.NewFileName?.Trim() ?? string.Empty;
             var normalizedNew = StringNormalizer.NormalizeFileName(rename.NewFileName);
@@ -1587,7 +1604,11 @@ public sealed class ProductManagementService : IProductManagementService
                     $"Несколько файлов не могут быть переименованы в одно и то же имя '{normalizedNew}'."
                 );
 
-            result.Add(new PreparedRename(rename.CurrentFileName.Trim(), normalizedNew));
+            // Пропускаем холостые переименования без фактических изменений
+            if (string.Equals(currentTrimmed, normalizedNew, StringComparison.Ordinal))
+                continue;
+
+            result.Add(new PreparedRename(currentTrimmed, normalizedNew));
         }
 
         return result;

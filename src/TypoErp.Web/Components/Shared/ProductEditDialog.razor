@@ -1,0 +1,852 @@
+@inject IProductManagementService ManagementService
+@inject ProductsStorageOptions StorageOptions
+@inject ISnackbar Snackbar
+
+<MudDialog Visible="@Visible" VisibleChanged="@HandleVisibleChangedAsync" Options="@_dialogOptions">
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@(IsEditMode ? (EditingProduct?.IsValid == false ? Icons.Material.Filled.Build : Icons.Material.Filled.Edit) : Icons.Material.Filled.AddBox)"
+                     Color="@(IsEditMode && EditingProduct?.IsValid == false ? Color.Warning : Color.Primary)" />
+            <MudText Typo="Typo.h6">
+                @if (!IsEditMode)
+                {
+                    @:Создание товара или черновика
+                }
+                else if (EditingProduct?.IsValid == false)
+                {
+                    @:Починка и редактирование товара
+                }
+                else
+                {
+                    @:Редактирование товара
+                }
+            </MudText>
+        </MudStack>
+    </TitleContent>
+
+    <DialogContent>
+        <MudStack Spacing="3" Class="py-1" Style="max-height: 75vh; overflow-y: auto;">
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true" ShowCloseIcon="true" CloseIconClicked="ClearErrorMessage">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            @if (IsEditMode && EditingProduct is not null && !EditingProduct.IsValid)
+            {
+                <MudAlert Severity="@(EditingProduct.IsDraftOnly ? Severity.Info : Severity.Warning)" Variant="Variant.Outlined" Dense="true">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">
+                        @(EditingProduct.IsDraftOnly
+                            ? "Черновик товара (ожидает загрузки файлов сборки):"
+                            : "Текущие ошибки товара на диске, требующие исправления:")
+                    </MudText>
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                        @foreach (var err in EditingProduct.ValidationErrors)
+                        {
+                            var desc = ProductValidationErrorInfo.Describe(err);
+                            <MudTooltip Text="@desc.Description">
+                                <MudChip T="string" Size="Size.Small" Color="@(desc.IsDraftState ? Color.Info : Color.Error)" Variant="Variant.Filled">
+                                    @desc.ShortTitle
+                                </MudChip>
+                            </MudTooltip>
+                        }
+                    </MudStack>
+                </MudAlert>
+            }
+
+            @* 1. Первичный тег и Артикул *@
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">1. Расположение в хранилище (Первичный тег и Артикул)</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string"
+                                      Value="@_primaryTagInput"
+                                      ValueChanged="@OnPrimaryTagChanged"
+                                      Label="Первичный тег (папка 1-го уровня)"
+                                      Placeholder="Например: сезон весна 2026"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Immediate="true"
+                                      HelperText="@($"Нормализованное имя: «{_preview.NormalizedPrimaryTag}» (макс. {StorageOptions.MaxPrimaryTagLength} симв.)")" />
+
+                        @if (AvailablePrimaryTags.Count > 0)
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="1" Class="mt-1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Быстрый выбор:</MudText>
+                                @foreach (var tag in AvailablePrimaryTags.Take(8))
+                                {
+                                    <MudChip T="string"
+                                             Size="Size.Small"
+                                             Variant="@(string.Equals(_preview.NormalizedPrimaryTag, tag.NormalizedName, StringComparison.Ordinal) ? Variant.Filled : Variant.Outlined)"
+                                             Color="Color.Primary"
+                                             OnClick="@(() => SelectExistingPrimaryTag(tag.Name))">
+                                        @tag.Name (@tag.ProductsCount)
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12" md="6">
+                        <MudTextField T="string"
+                                      Value="@_articleInput"
+                                      ValueChanged="@OnArticleChanged"
+                                      Label="Артикул товара (папка 2-го уровня)"
+                                      Placeholder="Например: 45к наклейки котики"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Immediate="true"
+                                      HelperText="@($"Нормализованный артикул: «{_preview.NormalizedArticle}» • Код формата: «{_preview.FormatCode ?? "нет пробела!"}»")" />
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+
+            @* 2. Существующие файлы на диске (в режиме редактирования / починки) *@
+            @if (IsEditMode && _existingFiles.Count > 0)
+            {
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                        <MudText Typo="Typo.subtitle2">
+                            2. Текущие файлы в папке товара на диске (@_existingFiles.Count)
+                        </MudText>
+                        <MudButton Size="Size.Small"
+                                   Variant="Variant.Outlined"
+                                   Color="Color.Secondary"
+                                   StartIcon="@Icons.Material.Filled.AutoFixHigh"
+                                   OnClick="AutoNormalizeExistingFileNames">
+                            Нормализовать имена
+                        </MudButton>
+                    </MudStack>
+
+                    <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                        <thead>
+                            <tr>
+                                <th>Текущее имя на диске</th>
+                                <th>Новое имя (для починки/переименования)</th>
+                                <th>Тип и префикс</th>
+                                <th>Размер / XxHash64</th>
+                                <th>Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var existing in _existingFiles)
+                            {
+                                var classified = ProductFileClassifier.Classify(existing.NewFileName, StorageOptions);
+                                <tr style="@(existing.IsMarkedForDeletion ? "opacity: 0.55; text-decoration: line-through;" : string.Empty)">
+                                    <td>
+                                        <code>@existing.CurrentFileName</code>
+                                    </td>
+                                    <td style="min-width: 240px;">
+                                        <MudTextField T="string"
+                                                      Value="@existing.NewFileName"
+                                                      ValueChanged="@(val => OnExistingFileNameChanged(existing, val))"
+                                                      Variant="Variant.Outlined"
+                                                      Margin="Margin.Dense"
+                                                      Disabled="@existing.IsMarkedForDeletion"
+                                                      Immediate="true" />
+                                    </td>
+                                    <td>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudChip T="string" Size="Size.Small" Color="@GetFileKindColor(classified.Kind)" Variant="Variant.Outlined">
+                                                @GetFileKindLabel(classified.Kind)
+                                            </MudChip>
+                                            @if (!string.IsNullOrEmpty(classified.Prefix))
+                                            {
+                                                <MudText Typo="Typo.caption">префикс: <b>@classified.Prefix</b></MudText>
+                                            }
+                                            @foreach (var err in classified.Errors)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">
+                                                    @ProductValidationErrorInfo.Describe(err).ShortTitle
+                                                </MudChip>
+                                            }
+                                        </MudStack>
+                                    </td>
+                                    <td>
+                                        <MudText Typo="Typo.caption">@FormatSize(existing.SizeBytes)</MudText>
+                                        <br />
+                                        <code style="font-size: 0.72rem;">@existing.XxHash64</code>
+                                    </td>
+                                    <td>
+                                        <MudButton Size="Size.Small"
+                                                   Variant="@(existing.IsMarkedForDeletion ? Variant.Filled : Variant.Outlined)"
+                                                   Color="@(existing.IsMarkedForDeletion ? Color.Warning : Color.Error)"
+                                                   StartIcon="@(existing.IsMarkedForDeletion ? Icons.Material.Filled.RestoreFromTrash : Icons.Material.Filled.DeleteOutline)"
+                                                   OnClick="@(() => ToggleExistingFileDeletion(existing))">
+                                            @(existing.IsMarkedForDeletion ? "Вернуть" : "Удалить")
+                                        </MudButton>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+
+            @* 3. Загрузка новых или обновленных файлов с diff-сверкой по XxHash64 *@
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="mb-2">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.subtitle2">
+                            @(IsEditMode ? "3. Загрузка новых или обновленных файлов (Diff по XxHash64)" : "2. Загрузка файлов товара (необязательно для черновика)")
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Обложки: <b>cover_*.jpg/.png/.tif/.webp</b> • Видео: <b>video_*.mp4/.mov/.mkv</b> • Файлы сборки: единый префикс (например, <b>card_1.pdf</b>, <b>card_2.pdf</b>)
+                        </MudText>
+                    </MudStack>
+
+                    <MudStack Row="true" Spacing="1">
+                        <InputFile id="@_fileInputId" OnChange="HandleFilesSelectedAsync" multiple class="d-none" />
+                        <MudButton HtmlTag="label"
+                                   for="@_fileInputId"
+                                   Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.UploadFile"
+                                   Disabled="@_isReadingFiles">
+                            Выбрать файлы...
+                        </MudButton>
+                        @if (_uploads.Count > 0)
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       OnClick="ClearUploads">
+                                Очистить загрузку (@_uploads.Count)
+                            </MudButton>
+                        }
+                    </MudStack>
+                </MudStack>
+
+                @if (_isReadingFiles)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-2" />
+                }
+
+                @if (_uploads.Count > 0)
+                {
+                    <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                        <thead>
+                            <tr>
+                                <th>Имя файла (после нормализации)</th>
+                                <th>Классификация</th>
+                                <th>Размер / XxHash64</th>
+                                <th>Статус Diff-сверки</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var uploadItem in _preview.Files.Where(f => f.IsUploadedFile))
+                            {
+                                <tr>
+                                    <td>
+                                        <code>@uploadItem.EffectiveNormalizedFileName</code>
+                                        @if (!string.Equals(uploadItem.SourceFileName, uploadItem.EffectiveNormalizedFileName, StringComparison.Ordinal))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                (исх.: @uploadItem.SourceFileName)
+                                            </MudText>
+                                        }
+                                    </td>
+                                    <td>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudChip T="string" Size="Size.Small" Color="@GetFileKindColor(uploadItem.Kind)" Variant="Variant.Outlined">
+                                                @GetFileKindLabel(uploadItem.Kind)
+                                            </MudChip>
+                                            @if (!string.IsNullOrEmpty(uploadItem.Prefix))
+                                            {
+                                                <MudText Typo="Typo.caption">префикс: <b>@uploadItem.Prefix</b></MudText>
+                                            }
+                                            @foreach (var err in uploadItem.Errors)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">
+                                                    @ProductValidationErrorInfo.Describe(err).ShortTitle
+                                                </MudChip>
+                                            }
+                                        </MudStack>
+                                    </td>
+                                    <td>
+                                        <MudText Typo="Typo.caption">@FormatSize(uploadItem.SizeBytes)</MudText>
+                                        <br />
+                                        <code style="font-size: 0.72rem;">@uploadItem.XxHash64</code>
+                                    </td>
+                                    <td>
+                                        @switch (uploadItem.DiffStatus)
+                                        {
+                                            case ProductDraftFileDiffStatus.UnchangedByHash:
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                                    Без изменений (XxHash64 совпадает)
+                                                </MudChip>
+                                                break;
+                                            case ProductDraftFileDiffStatus.ContentModified:
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">
+                                                    Перезапись (новый XxHash64)
+                                                </MudChip>
+                                                break;
+                                            default:
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                                                    Новый файл
+                                                </MudChip>
+                                                break;
+                                        }
+                                    </td>
+                                    <td>
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                                       Size="Size.Small"
+                                                       Color="Color.Error"
+                                                       OnClick="@(() => RemoveUpload(uploadItem.SourceFileName))" />
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">
+                        Файлы для загрузки не выбраны. @(IsEditMode ? "Существующие файлы останутся на диске." : "Если сохранить без файлов сборки, товар будет создан как черновик.")
+                    </MudText>
+                }
+            </MudPaper>
+
+            @* 4. Непервичные теги товара *@
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">
+                    @(IsEditMode ? "4. Непервичные теги товара" : "3. Непервичные теги товара")
+                </MudText>
+
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" md="7">
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                            @if (_selectedSecondaryTags.Count == 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Прямые непервичные теги не назначены.</MudText>
+                            }
+                            @foreach (var tag in _selectedSecondaryTags.OrderBy(t => t, StringComparer.Ordinal))
+                            {
+                                <MudChip T="string"
+                                         Size="Size.Small"
+                                         Color="Color.Primary"
+                                         Variant="Variant.Filled"
+                                         OnClose="@(() => RemoveSecondaryTag(tag))">
+                                    @tag
+                                </MudChip>
+                            }
+                        </MudStack>
+
+                        @if (IsEditMode && EditingProduct is { InheritedSecondaryTags.Count: > 0 })
+                        {
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Унаследованы от категории/формата:</MudText>
+                                @foreach (var inherited in EditingProduct.InheritedSecondaryTags)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined">
+                                        @inherited
+                                    </MudChip>
+                                }
+                            </MudStack>
+                        }
+                    </MudItem>
+
+                    <MudItem xs="12" md="5">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudTextField T="string"
+                                          @bind-Value="_newSecondaryTagInput"
+                                          Label="Добавить непервичный тег"
+                                          Placeholder="Например: хит продаж"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Immediate="true" />
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       OnClick="AddCustomSecondaryTag">
+                                Добавить
+                            </MudButton>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+
+                @if (AvailableSecondaryTags.Count > 0)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">Справочник тегов:</MudText>
+                        @foreach (var lookupTag in AvailableSecondaryTags)
+                        {
+                            var isSelected = _selectedSecondaryTags.Contains(lookupTag.Name);
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Color="@(isSelected ? Color.Primary : Color.Default)"
+                                     Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                     OnClick="@(() => ToggleSecondaryTag(lookupTag.Name))">
+                                @lookupTag.Name
+                            </MudChip>
+                        }
+                    </MudStack>
+                }
+            </MudPaper>
+
+            @* 5. Итоговое интерактивное превью результата перед сохранением *@
+            <MudPaper Outlined="true" Class="pa-3" Style="background-color: var(--mud-palette-background-grey);">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.subtitle2">Прогноз состояния после сохранения:</MudText>
+                        <MudText Typo="Typo.body2">
+                            Категория: <b>@(_preview.CategoryCode ?? "не выведена (нет единого префикса сборки)")</b>
+                            • Формат: <b>@(_preview.FormatCode ?? "не выведен")</b>
+                            • Файлов: обложек <b>@_preview.ActiveCoversCount</b>, видео <b>@_preview.ActiveVideoCoversCount</b>, сборки <b>@_preview.ActiveAssemblyFilesCount</b>
+                        </MudText>
+                    </MudStack>
+
+                    @if (_preview.IsValid)
+                    {
+                        <MudChip T="string" Color="Color.Success" Variant="Variant.Filled" Icon="@Icons.Material.Filled.CheckCircle">
+                            Валидный товар
+                        </MudChip>
+                    }
+                    else if (_preview.IsDraftOnly)
+                    {
+                        <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Icon="@Icons.Material.Filled.EditNote">
+                            Черновик (без файлов сборки)
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Warning" Variant="Variant.Filled" Icon="@Icons.Material.Filled.Warning">
+                            Остаются ошибки (@_preview.ValidationErrors.Count)
+                        </MudChip>
+                    }
+                </MudStack>
+
+                @if (_preview.ValidationErrors.Count > 0)
+                {
+                    <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1" Class="mt-2">
+                        @foreach (var err in _preview.ValidationErrors)
+                        {
+                            var desc = ProductValidationErrorInfo.Describe(err);
+                            <MudTooltip Text="@desc.Description">
+                                <MudChip T="string" Size="Size.Small" Color="@(desc.IsDraftState ? Color.Info : Color.Warning)" Variant="Variant.Outlined">
+                                    @desc.ShortTitle: @desc.Description
+                                </MudChip>
+                            </MudTooltip>
+                        }
+                    </MudStack>
+                }
+            </MudPaper>
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text"
+                   Color="Color.Default"
+                   Disabled="@_isSaving"
+                   OnClick="CloseAsync">
+            Отмена
+        </MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Save"
+                   Disabled="@(_isSaving || _isReadingFiles || !_preview.CanSavePrimaryTagAndArticle)"
+                   OnClick="SaveAsync">
+            @if (_isSaving)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                @:Сохранение...
+            }
+            else if (!IsEditMode)
+            {
+                @(_preview.IsDraftOnly ? "Создать черновик" : "Создать товар")
+            }
+            else
+            {
+                @:Сохранить изменения
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const long MaxSingleFileSizeBytes = 512L * 1024 * 1024;
+    private readonly string _fileInputId = $"product-files-input-{Guid.NewGuid():N}";
+
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Large,
+        FullWidth = true,
+        CloseButton = true,
+        BackdropClick = false,
+    };
+
+    private string _primaryTagInput = string.Empty;
+    private string _articleInput = string.Empty;
+    private string _newSecondaryTagInput = string.Empty;
+    private string? _errorMessage;
+    private bool _isReadingFiles;
+    private bool _isSaving;
+    private Guid? _initializedForProductId;
+    private bool _wasVisible;
+
+    private readonly List<EditableExistingFileRow> _existingFiles = [];
+    private readonly List<ProductFileUpload> _uploads = [];
+    private readonly HashSet<string> _selectedSecondaryTags = new(StringComparer.Ordinal);
+
+    private ProductDraftPreviewResult _preview = ProductDraftInspector.Inspect(string.Empty, string.Empty);
+
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> VisibleChanged { get; set; }
+
+    [Parameter]
+    public ProductCatalogItemDto? EditingProduct { get; set; }
+
+    [Parameter]
+    public string SessionId { get; set; } = string.Empty;
+
+    [Parameter]
+    public IReadOnlyList<PrimaryTagLookupDto> AvailablePrimaryTags { get; set; } = [];
+
+    [Parameter]
+    public IReadOnlyList<SecondaryTagLookupDto> AvailableSecondaryTags { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<ProductMutationResult> OnSaved { get; set; }
+
+    private bool IsEditMode => EditingProduct is not null;
+
+    protected override void OnParametersSet()
+    {
+        if (Visible && (!_wasVisible || _initializedForProductId != EditingProduct?.Id))
+        {
+            InitializeFormState();
+            _wasVisible = true;
+            _initializedForProductId = EditingProduct?.Id;
+        }
+        else if (!Visible)
+        {
+            _wasVisible = false;
+        }
+    }
+
+    private void ClearErrorMessage()
+    {
+        _errorMessage = null;
+    }
+
+    private void InitializeFormState()
+    {
+        _errorMessage = null;
+        _isReadingFiles = false;
+        _isSaving = false;
+        _newSecondaryTagInput = string.Empty;
+        _existingFiles.Clear();
+        _uploads.Clear();
+        _selectedSecondaryTags.Clear();
+
+        if (EditingProduct is not null)
+        {
+            _primaryTagInput = EditingProduct.PrimaryTagName ?? string.Empty;
+            _articleInput = EditingProduct.Article;
+
+            foreach (var file in EditingProduct.Files)
+            {
+                _existingFiles.Add(
+                    new EditableExistingFileRow
+                    {
+                        CurrentFileName = file.FileName,
+                        NewFileName = file.FileName,
+                        SizeBytes = file.SizeBytes,
+                        XxHash64 = file.XxHash64,
+                        IsMarkedForDeletion = false,
+                    }
+                );
+            }
+
+            foreach (var tag in EditingProduct.SecondaryTags)
+                _selectedSecondaryTags.Add(tag);
+        }
+        else
+        {
+            _primaryTagInput = AvailablePrimaryTags.FirstOrDefault()?.Name ?? string.Empty;
+            _articleInput = string.Empty;
+        }
+
+        RecalculatePreview();
+    }
+
+    private void OnPrimaryTagChanged(string value)
+    {
+        _primaryTagInput = value;
+        RecalculatePreview();
+    }
+
+    private void OnArticleChanged(string value)
+    {
+        _articleInput = value;
+        RecalculatePreview();
+    }
+
+    private void SelectExistingPrimaryTag(string tagName)
+    {
+        _primaryTagInput = tagName;
+        RecalculatePreview();
+    }
+
+    private void OnExistingFileNameChanged(EditableExistingFileRow row, string newName)
+    {
+        row.NewFileName = newName;
+        RecalculatePreview();
+    }
+
+    private void ToggleExistingFileDeletion(EditableExistingFileRow row)
+    {
+        row.IsMarkedForDeletion = !row.IsMarkedForDeletion;
+        RecalculatePreview();
+    }
+
+    private void AutoNormalizeExistingFileNames()
+    {
+        foreach (var row in _existingFiles.Where(r => !r.IsMarkedForDeletion))
+        {
+            var normalized = StringNormalizer.NormalizeFileName(row.NewFileName);
+            if (!string.IsNullOrEmpty(normalized))
+                row.NewFileName = normalized;
+        }
+
+        RecalculatePreview();
+    }
+
+    private async Task HandleFilesSelectedAsync(InputFileChangeEventArgs args)
+    {
+        _errorMessage = null;
+        _isReadingFiles = true;
+        StateHasChanged();
+
+        try
+        {
+            var files = args.GetMultipleFiles(maximumFileCount: 100);
+            foreach (var browserFile in files)
+            {
+                await using var stream = browserFile.OpenReadStream(MaxSingleFileSizeBytes);
+                using var ms = new MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
+
+                var normalizedIncoming = StringNormalizer.NormalizeFileName(browserFile.Name);
+                _uploads.RemoveAll(u =>
+                    string.Equals(
+                        StringNormalizer.NormalizeFileName(u.FileName),
+                        normalizedIncoming,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                );
+
+                _uploads.Add(new ProductFileUpload(browserFile.Name, bytes));
+            }
+
+            RecalculatePreview();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Не удалось прочитать выбранный файл: {ex.Message}";
+        }
+        finally
+        {
+            _isReadingFiles = false;
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveUpload(string sourceFileName)
+    {
+        _uploads.RemoveAll(u => string.Equals(u.FileName, sourceFileName, StringComparison.Ordinal));
+        RecalculatePreview();
+    }
+
+    private void ClearUploads()
+    {
+        _uploads.Clear();
+        RecalculatePreview();
+    }
+
+    private void AddCustomSecondaryTag()
+    {
+        var normalized = StringNormalizer.Normalize(_newSecondaryTagInput);
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        _selectedSecondaryTags.Add(normalized);
+        _newSecondaryTagInput = string.Empty;
+    }
+
+    private void ToggleSecondaryTag(string tagName)
+    {
+        var normalized = StringNormalizer.Normalize(tagName);
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        if (!_selectedSecondaryTags.Remove(normalized))
+            _selectedSecondaryTags.Add(normalized);
+    }
+
+    private void RemoveSecondaryTag(string tagName)
+    {
+        _selectedSecondaryTags.Remove(tagName);
+    }
+
+    private void RecalculatePreview()
+    {
+        var existingInputs = _existingFiles
+            .Select(r => new ProductDraftExistingFileInput(
+                r.CurrentFileName,
+                r.NewFileName,
+                r.SizeBytes,
+                r.XxHash64,
+                r.IsMarkedForDeletion
+            ))
+            .ToList();
+
+        _preview = ProductDraftInspector.Inspect(
+            _primaryTagInput,
+            _articleInput,
+            existingInputs,
+            _uploads,
+            StorageOptions
+        );
+    }
+
+    private async Task SaveAsync()
+    {
+        _errorMessage = null;
+        _isSaving = true;
+
+        try
+        {
+            ProductMutationResult result;
+
+            if (!IsEditMode)
+            {
+                var createRequest = new CreateProductRequest(
+                    PrimaryTagName: _primaryTagInput,
+                    Article: _articleInput,
+                    Files: _uploads,
+                    SecondaryTagNames: _selectedSecondaryTags.ToList()
+                );
+
+                result = await ManagementService.CreateProductAsync(SessionId, createRequest);
+
+                Snackbar.Add(
+                    result.IsValid
+                        ? $"Товар «{result.NormalizedPrimaryTag}/{result.NormalizedArticle}» успешно создан."
+                        : $"Черновик/товар «{result.NormalizedPrimaryTag}/{result.NormalizedArticle}» создан ({result.ValidationErrors.Count} пред.).",
+                    result.IsValid ? Severity.Success : Severity.Info
+                );
+            }
+            else
+            {
+                var filesToDelete = _existingFiles
+                    .Where(f => f.IsMarkedForDeletion)
+                    .Select(f => f.CurrentFileName)
+                    .ToList();
+
+                var fileRenames = _existingFiles
+                    .Where(f =>
+                        !f.IsMarkedForDeletion
+                        && !string.Equals(
+                            f.CurrentFileName,
+                            StringNormalizer.NormalizeFileName(f.NewFileName),
+                            StringComparison.Ordinal
+                        )
+                    )
+                    .Select(f => new ProductFileRenameInput(f.CurrentFileName, f.NewFileName))
+                    .ToList();
+
+                var updateRequest = new UpdateProductRequest(
+                    ProductId: EditingProduct!.Id,
+                    NewPrimaryTagName: _primaryTagInput,
+                    NewArticle: _articleInput,
+                    FilesToUpsert: _uploads,
+                    FilesToDelete: filesToDelete,
+                    FileRenames: fileRenames,
+                    SecondaryTagNames: _selectedSecondaryTags.ToList()
+                );
+
+                result = await ManagementService.UpdateProductAsync(SessionId, updateRequest);
+
+                Snackbar.Add(
+                    $"Товар «{result.NormalizedPrimaryTag}/{result.NormalizedArticle}» сохранен (обновлено файлов: {result.AddedOrUpdatedFilesCount}, без изменений по XxHash64: {result.UnchangedFilesCount}, удалено: {result.DeletedFilesCount}).",
+                    result.IsValid ? Severity.Success : Severity.Warning
+                );
+            }
+
+            await OnSaved.InvokeAsync(result);
+            await CloseAsync();
+        }
+        catch (ProductManagementException ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        catch (ProductsWorkspaceLockException ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Ошибка при сохранении товара: {ex.Message}";
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+
+    private Task HandleVisibleChangedAsync(bool nextVisible)
+    {
+        Visible = nextVisible;
+        return VisibleChanged.InvokeAsync(nextVisible);
+    }
+
+    private Task CloseAsync()
+    {
+        return HandleVisibleChangedAsync(false);
+    }
+
+    private static Color GetFileKindColor(ProductFileKind kind) =>
+        kind switch
+        {
+            ProductFileKind.Cover => Color.Info,
+            ProductFileKind.VideoCover => Color.Secondary,
+            ProductFileKind.AssemblyFile => Color.Primary,
+            _ => Color.Default,
+        };
+
+    private static string GetFileKindLabel(ProductFileKind kind) =>
+        kind switch
+        {
+            ProductFileKind.Cover => "Обложка",
+            ProductFileKind.VideoCover => "Видеообложка",
+            ProductFileKind.AssemblyFile => "Файл сборки",
+            _ => "Игнорируемый",
+        };
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+            return $"{bytes} Б";
+        if (bytes < 1024 * 1024)
+            return $"{bytes / 1024.0:F1} КБ";
+        return $"{bytes / (1024.0 * 1024.0):F2} МБ";
+    }
+
+    private sealed class EditableExistingFileRow
+    {
+        public string CurrentFileName { get; set; } = string.Empty;
+        public string NewFileName { get; set; } = string.Empty;
+        public long SizeBytes { get; set; }
+        public string XxHash64 { get; set; } = string.Empty;
+        public bool IsMarkedForDeletion { get; set; }
+    }
+}

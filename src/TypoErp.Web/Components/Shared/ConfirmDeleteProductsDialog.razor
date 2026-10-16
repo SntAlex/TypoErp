@@ -1,0 +1,152 @@
+@inject IProductManagementService ManagementService
+@inject ISnackbar Snackbar
+
+<MudDialog Visible="@Visible" VisibleChanged="@HandleVisibleChangedAsync" Options="@_dialogOptions">
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.DeleteForever" Color="Color.Error" />
+            <MudText Typo="Typo.h6">
+                @(ProductsToDelete.Count == 1
+                    ? "Удаление товара с диска и из БД"
+                    : $"Массовое удаление товаров ({ProductsToDelete.Count} шт.)")
+            </MudText>
+        </MudStack>
+    </TitleContent>
+
+    <DialogContent>
+        <MudStack Spacing="2" Class="py-1">
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Dense="true">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
+                Папки выбранных товаров и все содержащиеся в них файлы будут <b>безвозвратно удалены с диска</b>.
+                Категории и форматы, у которых больше не останется привязанных товаров, автоматически перейдут в состояние мягкого удаления (Soft Delete) с сохранением своих настроек.
+            </MudAlert>
+
+            @if (ProductsToDelete.Count <= 10)
+            {
+                <MudPaper Outlined="true" Class="pa-2">
+                    @foreach (var item in ProductsToDelete)
+                    {
+                        <MudText Typo="Typo.body2">
+                            • <code>@(item.PrimaryTagName ?? "<корень>") / @item.Article</code> (@item.Files.Count файлов)
+                        </MudText>
+                    }
+                </MudPaper>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2">
+                    Выбрано товаров к удалению: <b>@ProductsToDelete.Count</b>.
+                </MudText>
+            }
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" Disabled="@_isBusy" OnClick="CloseAsync">Отмена</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Error"
+                   StartIcon="@Icons.Material.Filled.DeleteForever"
+                   Disabled="@(_isBusy || ProductsToDelete.Count == 0)"
+                   OnClick="ExecuteDeleteAsync">
+            @(_isBusy ? "Удаление..." : $"Удалить ({ProductsToDelete.Count})")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private readonly DialogOptions _dialogOptions = new()
+    {
+        MaxWidth = MaxWidth.Small,
+        FullWidth = true,
+        CloseButton = true,
+    };
+
+    private string? _errorMessage;
+    private bool _isBusy;
+    private bool _wasVisible;
+
+    [Parameter]
+    public bool Visible { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> VisibleChanged { get; set; }
+
+    [Parameter]
+    public string SessionId { get; set; } = string.Empty;
+
+    [Parameter]
+    public IReadOnlyList<ProductCatalogItemDto> ProductsToDelete { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<int> OnDeleted { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        if (Visible && !_wasVisible)
+        {
+            _errorMessage = null;
+            _isBusy = false;
+            _wasVisible = true;
+        }
+        else if (!Visible)
+        {
+            _wasVisible = false;
+        }
+    }
+
+    private async Task ExecuteDeleteAsync()
+    {
+        _errorMessage = null;
+        _isBusy = true;
+
+        try
+        {
+            int deletedCount;
+            if (ProductsToDelete.Count == 1)
+            {
+                var deleted = await ManagementService.DeleteProductAsync(
+                    SessionId,
+                    ProductsToDelete[0].Id
+                );
+                deletedCount = deleted ? 1 : 0;
+            }
+            else
+            {
+                deletedCount = await ManagementService.BulkDeleteProductsAsync(
+                    SessionId,
+                    ProductsToDelete.Select(p => p.Id).ToList()
+                );
+            }
+
+            Snackbar.Add($"Удалено товаров: {deletedCount}.", Severity.Success);
+            await OnDeleted.InvokeAsync(deletedCount);
+            await CloseAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            _errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Ошибка при удалении товаров: {ex.Message}";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private Task HandleVisibleChangedAsync(bool nextVisible)
+    {
+        Visible = nextVisible;
+        return VisibleChanged.InvokeAsync(nextVisible);
+    }
+
+    private Task CloseAsync() => HandleVisibleChangedAsync(false);
+}

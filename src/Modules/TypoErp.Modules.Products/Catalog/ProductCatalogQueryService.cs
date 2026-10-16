@@ -179,7 +179,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                 filtered = filtered.Where(p => p.ValidationErrors.Contains(targetError));
             }
 
-            // Полнотекстовый поиск (регистронезависимый для кириллицы и латиницы)
+            // Полнотекстовый поиск (регистронезависимый для кириллицы и латинице)
             if (!string.IsNullOrWhiteSpace(filter.SearchText))
             {
                 var normalizedSearch = StringNormalizer.Normalize(filter.SearchText);
@@ -205,6 +205,36 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                 totalValidCount,
                 totalInvalidCount
             );
+        }
+        finally
+        {
+            _queryLock.Release();
+        }
+    }
+
+    public async Task<ProductCatalogItemDto?> GetProductByIdAsync(
+        Guid productId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (productId == Guid.Empty)
+            return null;
+
+        await _queryLock.WaitAsync(cancellationToken);
+        try
+        {
+            var product = await _dbContext
+                .Products.AsNoTracking()
+                .Include(p => p.PrimaryTag)
+                .Include(p => p.Category)
+                    .ThenInclude(c => c!.SecondaryTags)
+                .Include(p => p.Format)
+                    .ThenInclude(f => f!.SecondaryTags)
+                .Include(p => p.SecondaryTags)
+                .Include(p => p.Files)
+                .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
+
+            return product is null ? null : MapToDto(product);
         }
         finally
         {
