@@ -56,7 +56,8 @@ public static class ProductDraftInspector
             }
         }
 
-        // 2. Собираем целевые имена всех активных существующих файлов (не помеченных на удаление и не перезаписанных загрузкой)
+        // 2. Собираем целевые имена всех активных существующих файлов (не помеченных на удаление)
+        var existingTargetCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var targetNameCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var existing in existingList)
@@ -69,6 +70,9 @@ public static class ProductDraftInspector
                     ? existing.CurrentFileName
                     : existing.NewFileName
             );
+
+            existingTargetCounts[targetNormalized] =
+                existingTargetCounts.GetValueOrDefault(targetNormalized) + 1;
 
             if (uploadByNormalizedName.ContainsKey(targetNormalized))
                 continue;
@@ -83,7 +87,9 @@ public static class ProductDraftInspector
                 targetNameCounts.GetValueOrDefault(kvp.Key) + kvp.Value.Count;
         }
 
-        var hasDuplicateTargets = targetNameCounts.Values.Any(count => count > 1);
+        var hasDuplicateTargets =
+            existingTargetCounts.Values.Any(count => count > 1)
+            || targetNameCounts.Values.Any(count => count > 1);
 
         // Индекс существующих активных файлов по их целевому нормализованному имени для diff-сверки XxHash64
         var activeExistingByTargetName = new Dictionary<string, ProductDraftExistingFileInput>(
@@ -155,7 +161,9 @@ public static class ProductDraftInspector
             if (isRenamed)
                 renamedExistingCount++;
 
-            var isDuplicate = targetNameCounts.GetValueOrDefault(targetNormalized) > 1;
+            var isDuplicate =
+                existingTargetCounts.GetValueOrDefault(targetNormalized) > 1
+                || targetNameCounts.GetValueOrDefault(targetNormalized) > 1;
 
             previewFiles.Add(
                 new ProductDraftFilePreviewItem(
@@ -183,7 +191,9 @@ public static class ProductDraftInspector
             var normalizedName = StringNormalizer.NormalizeFileName(upload.FileName);
             var classified = ProductFileClassifier.Classify(upload.FileName, opts);
             var hash = ProductFileHasher.Compute(upload.Content);
-            var isDuplicate = targetNameCounts.GetValueOrDefault(normalizedName) > 1;
+            var isDuplicate =
+                existingTargetCounts.GetValueOrDefault(normalizedName) > 1
+                || targetNameCounts.GetValueOrDefault(normalizedName) > 1;
 
             ProductDraftFileDiffStatus diffStatus;
             if (activeExistingByTargetName.TryGetValue(normalizedName, out var matchedExisting))

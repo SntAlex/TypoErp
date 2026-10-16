@@ -893,6 +893,22 @@ public sealed class ProductManagementService : IProductManagementService
         }
 
         var normalizedNewName = validation.NormalizedName;
+        if (string.Equals(primaryTag.Name, normalizedNewName, StringComparison.Ordinal))
+            return;
+
+        var duplicateInDb = await _dbContext.PrimaryTags.AnyAsync(
+            t =>
+                t.Id != primaryTagId
+                && (t.Name == normalizedNewName || t.NormalizedName == normalizedNewName),
+            cancellationToken
+        );
+
+        if (duplicateInDb)
+            throw new ProductManagementException(
+                ProductManagementErrorCode.TargetAlreadyExists,
+                $"Первичный тег '{normalizedNewName}' уже существует."
+            );
+
         var renameResult = await _storage.RenamePrimaryTagDirectoryAsync(
             primaryTag.Name,
             normalizedNewName,
@@ -914,6 +930,10 @@ public sealed class ProductManagementService : IProductManagementService
         }
 
         var now = _timeProvider.GetUtcNow();
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync(
+            cancellationToken
+        );
+
         primaryTag.UpdateName(normalizedNewName, now);
 
         var productCountOnDisk = (
@@ -931,8 +951,10 @@ public sealed class ProductManagementService : IProductManagementService
             );
         }
 
+        await _dbContext.SaveChangesAsync(cancellationToken);
         await SynchronizeCategoriesAndFormatsSoftDeleteStateAsync(now, cancellationToken);
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         _logger.LogInformation(
             "Renamed primary tag {PrimaryTagId} to '{NewName}' and revalidated {ProductCount} products",

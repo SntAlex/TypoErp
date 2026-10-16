@@ -24,7 +24,7 @@ else
         <MudPaper Elevation="1" Class="pa-4">
             <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
                 <MudStack Spacing="0">
-                    <MudText Typo="Typo.h5">Каталог товаров</MudText>
+                    <MudText Typo="Typo.h5">Рабочее пространство «Товары»</MudText>
                     <MudText Typo="Typo.caption" Color="Color.Secondary">
                         Корень хранилища: <code>@(_lookups?.StorageRootPath ?? "—")</code>
                     </MudText>
@@ -73,14 +73,6 @@ else
                 </MudStack>
             </MudStack>
 
-            @if (_lookups is not null && !_lookups.IsStorageRootAccessible)
-            {
-                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-3">
-                    Корневой путь файлового хранилища <code>@_lookups.StorageRootPath</code> не существует или недоступен.
-                    Операции синхронизации и изменения товаров на диске заблокированы до восстановления доступа к каталогу.
-                </MudAlert>
-            }
-
             @if (_lastSyncResult is not null)
             {
                 <MudAlert Severity="@(_lastSyncResult.NormalizationConflictsCount > 0 || _lastSyncResult.InvalidProducts > 0 ? Severity.Warning : Severity.Success)"
@@ -98,434 +90,460 @@ else
             }
         </MudPaper>
 
-        @* Панель фильтрации и поиска *@
-        <MudPaper Elevation="1" Class="pa-4">
-            <MudGrid Spacing="2">
-                <MudItem xs="12" md="4">
-                    <MudTextField T="string"
-                                  Value="@_searchText"
-                                  ValueChanged="OnSearchChangedAsync"
-                                  Label="Поиск (артикул, первичный тег, категория, формат, файл)"
-                                  Placeholder="Например: 45к котики или card"
-                                  Variant="Variant.Outlined"
-                                  Margin="Margin.Dense"
-                                  Adornment="Adornment.Start"
-                                  AdornmentIcon="@Icons.Material.Filled.Search"
-                                  Clearable="true"
-                                  DebounceInterval="250" />
-                </MudItem>
+        @* Навигационные вкладки раздела «Товары»: 1) Каталог товаров, 2) Категории, Форматы и Теги *@
+        <MudTabs @bind-ActivePanelIndex="_activeTabIndex"
+                 Elevation="1"
+                 Rounded="true"
+                 ApplyEffectsToContainer="true"
+                 Color="Color.Primary">
+            <MudTabPanel Text="Каталог товаров" Icon="@Icons.Material.Filled.TableView">
+                <MudStack Spacing="3" Class="pt-3">
+                    @* Панель фильтрации и поиска *@
+                    <MudPaper Elevation="1" Class="pa-4">
+                        <MudGrid Spacing="2">
+                            <MudItem xs="12" md="4">
+                                <MudTextField T="string"
+                                              Value="@_searchText"
+                                              ValueChanged="OnSearchChangedAsync"
+                                              Label="Поиск (артикул, первичный тег, категория, формат, файл)"
+                                              Placeholder="Например: 45к котики или card"
+                                              Variant="Variant.Outlined"
+                                              Margin="Margin.Dense"
+                                              Adornment="Adornment.Start"
+                                              AdornmentIcon="@Icons.Material.Filled.Search"
+                                              Clearable="true"
+                                              DebounceInterval="250" />
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="2">
-                    <MudSelect T="ProductValidityFilter"
-                               Value="@_validityFilter"
-                               ValueChanged="OnValidityFilterChangedAsync"
-                               Label="Статус валидности"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense">
-                        <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.All">Все товары</MudSelectItem>
-                        <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.ValidOnly">Только валидные</MudSelectItem>
-                        <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.InvalidOnly">Только с ошибками / черновики</MudSelectItem>
-                    </MudSelect>
-                </MudItem>
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudSelect T="ProductValidityFilter"
+                                           Value="@_validityFilter"
+                                           ValueChanged="OnValidityFilterChangedAsync"
+                                           Label="Статус валидности"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense">
+                                    <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.All">Все товары</MudSelectItem>
+                                    <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.ValidOnly">Только валидные</MudSelectItem>
+                                    <MudSelectItem T="ProductValidityFilter" Value="ProductValidityFilter.InvalidOnly">Только с ошибками / черновики</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="3">
-                    <MudSelect T="Guid?"
-                               Value="@_selectedPrimaryTagId"
-                               ValueChanged="OnPrimaryTagChangedAsync"
-                               Label="Первичный тег (папка 1-го уровня)"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               Clearable="true">
-                        @if (_lookups is not null)
-                        {
-                            @foreach (var tag in _lookups.PrimaryTags)
-                            {
-                                <MudSelectItem T="Guid?" Value="@((Guid?)tag.Id)">
-                                    @tag.Name (@tag.ProductsCount)
-                                </MudSelectItem>
-                            }
-                        }
-                    </MudSelect>
-                </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudSelect T="Guid?"
+                                           Value="@_selectedPrimaryTagId"
+                                           ValueChanged="OnPrimaryTagChangedAsync"
+                                           Label="Первичный тег (папка 1-го уровня)"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Clearable="true">
+                                    @if (_lookups is not null)
+                                    {
+                                        @foreach (var tag in _lookups.PrimaryTags)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@((Guid?)tag.Id)">
+                                                @tag.Name (@tag.ProductsCount)
+                                            </MudSelectItem>
+                                        }
+                                    }
+                                </MudSelect>
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="3">
-                    <MudSelect T="Guid?"
-                               Value="@_selectedCategoryId"
-                               ValueChanged="OnCategoryChangedAsync"
-                               Label="Категория (префикс сборки)"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               Clearable="true">
-                        @if (_lookups is not null)
-                        {
-                            @foreach (var cat in _lookups.Categories)
-                            {
-                                <MudSelectItem T="Guid?" Value="@((Guid?)cat.Id)">
-                                    @cat.DisplayLabel (@cat.ProductsCount)
-                                </MudSelectItem>
-                            }
-                        }
-                    </MudSelect>
-                </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudSelect T="Guid?"
+                                           Value="@_selectedCategoryId"
+                                           ValueChanged="OnCategoryChangedAsync"
+                                           Label="Категория (префикс сборки)"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Clearable="true">
+                                    @if (_lookups is not null)
+                                    {
+                                        @foreach (var cat in _lookups.Categories)
+                                        {
+                                            <MudSelectItem T="Guid?" Value="@((Guid?)cat.Id)">
+                                                @cat.DisplayLabel (@cat.ProductsCount)
+                                            </MudSelectItem>
+                                        }
+                                    }
+                                </MudSelect>
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="3">
-                    <MudSelect T="Guid?"
-                               Value="@_selectedFormatId"
-                               ValueChanged="OnFormatChangedAsync"
-                               Label="Формат (внутри категории)"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               Clearable="true">
-                        @foreach (var fmt in GetAvailableFormats())
-                        {
-                            <MudSelectItem T="Guid?" Value="@((Guid?)fmt.Id)">
-                                @fmt.DisplayLabel (@fmt.ProductsCount)
-                            </MudSelectItem>
-                        }
-                    </MudSelect>
-                </MudItem>
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudSelect T="Guid?"
+                                           Value="@_selectedFormatId"
+                                           ValueChanged="OnFormatChangedAsync"
+                                           Label="Формат (внутри категории)"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Clearable="true">
+                                    @foreach (var fmt in GetAvailableFormats())
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@((Guid?)fmt.Id)">
+                                            @fmt.DisplayLabel (@fmt.ProductsCount)
+                                        </MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="4">
-                    <MudSelect T="Guid"
-                               SelectedValues="@_selectedSecondaryTagIds"
-                               SelectedValuesChanged="OnSecondaryTagsChangedAsync"
-                               Label="Непервичные теги (включая унаследованные)"
-                               MultiSelection="true"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               ToStringFunc="@GetSecondaryTagNameById">
-                        @if (_lookups is not null)
-                        {
-                            @foreach (var secTag in _lookups.SecondaryTags)
-                            {
-                                <MudSelectItem T="Guid" Value="@secTag.Id">
-                                    @secTag.Name
-                                </MudSelectItem>
-                            }
-                        }
-                    </MudSelect>
-                </MudItem>
+                            <MudItem xs="12" sm="6" md="4">
+                                <MudSelect T="Guid"
+                                           SelectedValues="@_selectedSecondaryTagIds"
+                                           SelectedValuesChanged="OnSecondaryTagsChangedAsync"
+                                           Label="Непервичные теги (включая унаследованные)"
+                                           MultiSelection="true"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           ToStringFunc="@GetSecondaryTagNameById">
+                                    @if (_lookups is not null)
+                                    {
+                                        @foreach (var secTag in _lookups.SecondaryTags)
+                                        {
+                                            <MudSelectItem T="Guid" Value="@secTag.Id">
+                                                @secTag.Name
+                                            </MudSelectItem>
+                                        }
+                                    }
+                                </MudSelect>
+                            </MudItem>
 
-                <MudItem xs="12" sm="6" md="3">
-                    <MudSelect T="ProductValidationError?"
-                               Value="@_selectedValidationError"
-                               ValueChanged="OnValidationErrorChangedAsync"
-                               Label="Конкретная ошибка валидации"
-                               Variant="Variant.Outlined"
-                               Margin="Margin.Dense"
-                               Clearable="true">
-                        @foreach (var err in ProductValidationErrorInfo.AllErrors)
-                        {
-                            var desc = ProductValidationErrorInfo.Describe(err);
-                            <MudSelectItem T="ProductValidationError?" Value="@((ProductValidationError?)err)">
-                                @desc.ShortTitle
-                            </MudSelectItem>
-                        }
-                    </MudSelect>
-                </MudItem>
-
-                <MudItem xs="12" sm="6" md="2">
-                    <MudButton Variant="Variant.Outlined"
-                               Color="Color.Secondary"
-                               FullWidth="true"
-                               StartIcon="@Icons.Material.Filled.FilterAltOff"
-                               Disabled="@(!HasActiveFilters)"
-                               OnClick="ResetFiltersAsync">
-                        Сбросить
-                    </MudButton>
-                </MudItem>
-            </MudGrid>
-        </MudPaper>
-
-        @* Панель массовых операций (Bulk CRUD Toolbar) *@
-        @if (_selectedProducts.Count > 0)
-        {
-            <MudPaper Elevation="2" Class="pa-3" Style="border-left: 4px solid var(--mud-palette-primary);">
-                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled">
-                            Выбрано товаров: @_selectedProducts.Count
-                        </MudChip>
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Text"
-                                   Color="Color.Secondary"
-                                   OnClick="ClearSelection">
-                            Снять выделение
-                        </MudButton>
-                    </MudStack>
-
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Outlined"
-                                   Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.DriveFileMove"
-                                   Disabled="@(!CanExecuteWriteOperation)"
-                                   OnClick="OpenBulkMoveDialog">
-                            Перенести в первичный тег...
-                        </MudButton>
-
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Outlined"
-                                   Color="Color.Secondary"
-                                   StartIcon="@Icons.Material.Filled.Label"
-                                   Disabled="@(!CanExecuteWriteOperation)"
-                                   OnClick="OpenBulkTagsDialog">
-                            Непервичные теги...
-                        </MudButton>
-
-                        <MudButton Size="Size.Small"
-                                   Variant="Variant.Filled"
-                                   Color="Color.Error"
-                                   StartIcon="@Icons.Material.Filled.DeleteSweep"
-                                   Disabled="@(!CanExecuteWriteOperation)"
-                                   OnClick="OpenBulkDeleteDialog">
-                            Удалить выбранные (@_selectedProducts.Count)
-                        </MudButton>
-                    </MudStack>
-                </MudStack>
-            </MudPaper>
-        }
-
-        @* Главная таблица товаров MudDataGrid *@
-        <MudPaper Elevation="1">
-            <MudDataGrid @ref="_dataGrid"
-                         T="ProductCatalogItemDto"
-                         ServerData="LoadServerDataAsync"
-                         MultiSelection="true"
-                         @bind-SelectedItems="_selectedProducts"
-                         Hover="true"
-                         Dense="true"
-                         Striped="true"
-                         FixedHeader="true">
-                <Columns>
-                    <SelectColumn T="ProductCatalogItemDto" />
-                    <HierarchyColumn T="ProductCatalogItemDto" />
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Статус" SortBy="@(_ => nameof(ProductCatalogSortField.Validity))">
-                        <CellTemplate>
-                            @if (context.Item.IsValid)
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
-                                    Валиден
-                                </MudChip>
-                            }
-                            else if (context.Item.IsDraftOnly)
-                            {
-                                <MudTooltip Text="@ProductValidationErrorInfo.Describe(ProductValidationError.MissingAssemblyFiles).Description">
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled">
-                                        Черновик
-                                    </MudChip>
-                                </MudTooltip>
-                            }
-                            else
-                            {
-                                <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                                    @foreach (var err in context.Item.ValidationErrors)
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudSelect T="ProductValidationError?"
+                                           Value="@_selectedValidationError"
+                                           ValueChanged="OnValidationErrorChangedAsync"
+                                           Label="Конкретная ошибка валидации"
+                                           Variant="Variant.Outlined"
+                                           Margin="Margin.Dense"
+                                           Clearable="true">
+                                    @foreach (var err in ProductValidationErrorInfo.AllErrors)
                                     {
                                         var desc = ProductValidationErrorInfo.Describe(err);
-                                        <MudTooltip Text="@desc.Description">
-                                            <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">
-                                                @desc.ShortTitle
-                                            </MudChip>
-                                        </MudTooltip>
+                                        <MudSelectItem T="ProductValidationError?" Value="@((ProductValidationError?)err)">
+                                            @desc.ShortTitle
+                                        </MudSelectItem>
                                     }
-                                </MudStack>
-                            }
-                        </CellTemplate>
-                    </TemplateColumn>
+                                </MudSelect>
+                            </MudItem>
 
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Первичный тег" SortBy="@(_ => nameof(ProductCatalogSortField.PrimaryTag))">
-                        <CellTemplate>
-                            @if (!string.IsNullOrWhiteSpace(context.Item.PrimaryTagName))
-                            {
-                                <MudText Typo="Typo.body2">@context.Item.PrimaryTagName</MudText>
-                            }
-                            else
-                            {
-                                <MudText Typo="Typo.body2" Color="Color.Error">Вне первичного тега (корень)</MudText>
-                            }
-                        </CellTemplate>
-                    </TemplateColumn>
+                            <MudItem xs="12" sm="6" md="2">
+                                <MudButton Variant="Variant.Outlined"
+                                           Color="Color.Secondary"
+                                           FullWidth="true"
+                                           StartIcon="@Icons.Material.Filled.FilterAltOff"
+                                           Disabled="@(!HasActiveFilters)"
+                                           OnClick="ResetFiltersAsync">
+                                    Сбросить
+                                </MudButton>
+                            </MudItem>
+                        </MudGrid>
+                    </MudPaper>
 
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Артикул" SortBy="@(_ => nameof(ProductCatalogSortField.Article))">
-                        <CellTemplate>
-                            <MudStack Spacing="0">
-                                <MudText Typo="Typo.body2"><b>@context.Item.Article</b></MudText>
-                                @if (!string.Equals(context.Item.Article, context.Item.NormalizedArticle, StringComparison.Ordinal))
-                                {
-                                    <MudText Typo="Typo.caption" Color="Color.Warning">
-                                        Норм.: @context.Item.NormalizedArticle
-                                    </MudText>
-                                }
-                            </MudStack>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Категория" SortBy="@(_ => nameof(ProductCatalogSortField.Category))">
-                        <CellTemplate>
-                            <MudText Typo="Typo.body2">@context.Item.CategoryLabel</MudText>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Формат" SortBy="@(_ => nameof(ProductCatalogSortField.Format))">
-                        <CellTemplate>
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">
-                                @(context.Item.FormatCode ?? "—")
-                            </MudChip>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Непервичные теги" Sortable="false">
-                        <CellTemplate>
-                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                                @foreach (var directTag in context.Item.SecondaryTags)
-                                {
-                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
-                                        @directTag
-                                    </MudChip>
-                                }
-                                @foreach (var inheritedTag in context.Item.InheritedSecondaryTags)
-                                {
-                                    <MudTooltip Text="Унаследован от категории или формата">
-                                        <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">
-                                            @inheritedTag
-                                        </MudChip>
-                                    </MudTooltip>
-                                }
-                            </MudStack>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Файлы (Обл / Вид / Сб)" SortBy="@(_ => nameof(ProductCatalogSortField.FilesCount))">
-                        <CellTemplate>
-                            <MudText Typo="Typo.body2">
-                                @context.Item.CoversCount / @context.Item.VideoCoversCount / <b>@context.Item.AssemblyFilesCount</b>
-                            </MudText>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    <TemplateColumn T="ProductCatalogItemDto" Title="Обновлен" SortBy="@(_ => nameof(ProductCatalogSortField.UpdatedAtUtc))">
-                        <CellTemplate>
-                            <MudText Typo="Typo.caption">
-                                @context.Item.UpdatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
-                            </MudText>
-                        </CellTemplate>
-                    </TemplateColumn>
-
-                    @if (_canEditProducts)
+                    @* Панель массовых операций (Bulk CRUD Toolbar) *@
+                    @if (_selectedProducts.Count > 0)
                     {
-                        <TemplateColumn T="ProductCatalogItemDto" Title="Действия" Sortable="false">
-                            <CellTemplate>
-                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                    <MudTooltip Text="@(context.Item.IsValid ? "Редактировать товар и файлы" : "Починить ошибки товара и файлов на диске")">
-                                        <span>
-                                            <MudIconButton Icon="@(context.Item.IsValid ? Icons.Material.Filled.Edit : Icons.Material.Filled.Build)"
-                                                           Size="Size.Small"
-                                                           Color="@(context.Item.IsValid ? Color.Primary : Color.Warning)"
-                                                           Disabled="@(!CanExecuteWriteOperation)"
-                                                           OnClick="@(() => OpenEditProductDialogAsync(context.Item))" />
-                                        </span>
-                                    </MudTooltip>
-
-                                    <MudTooltip Text="Удалить товар с диска и из БД">
-                                        <span>
-                                            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline"
-                                                           Size="Size.Small"
-                                                           Color="Color.Error"
-                                                           Disabled="@(!CanExecuteWriteOperation)"
-                                                           OnClick="@(() => OpenSingleDeleteDialog(context.Item))" />
-                                        </span>
-                                    </MudTooltip>
+                        <MudPaper Elevation="2" Class="pa-3" Style="border-left: 4px solid var(--mud-palette-primary);">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled">
+                                        Выбрано товаров: @_selectedProducts.Count
+                                    </MudChip>
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Text"
+                                               Color="Color.Secondary"
+                                               OnClick="ClearSelection">
+                                        Снять выделение
+                                    </MudButton>
                                 </MudStack>
-                            </CellTemplate>
-                        </TemplateColumn>
-                    }
-                </Columns>
 
-                <ChildRowContent>
-                    <MudCard Elevation="0" Class="pa-3" Style="background-color: var(--mud-palette-background-grey);">
-                        <MudStack Spacing="2">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
-                                <MudText Typo="Typo.subtitle2">
-                                    Детали товара • ProductId (<code>.typoerp_id</code>): <code>@context.Item.Id</code>
-                                </MudText>
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.DriveFileMove"
+                                               Disabled="@(!CanExecuteWriteOperation)"
+                                               OnClick="OpenBulkMoveDialog">
+                                        Перенести в первичный тег...
+                                    </MudButton>
+
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Outlined"
+                                               Color="Color.Secondary"
+                                               StartIcon="@Icons.Material.Filled.Label"
+                                               Disabled="@(!CanExecuteWriteOperation)"
+                                               OnClick="OpenBulkTagsDialog">
+                                        Непервичные теги...
+                                    </MudButton>
+
+                                    <MudButton Size="Size.Small"
+                                               Variant="Variant.Filled"
+                                               Color="Color.Error"
+                                               StartIcon="@Icons.Material.Filled.DeleteSweep"
+                                               Disabled="@(!CanExecuteWriteOperation)"
+                                               OnClick="OpenBulkDeleteDialog">
+                                        Удалить выбранные (@_selectedProducts.Count)
+                                    </MudButton>
+                                </MudStack>
+                            </MudStack>
+                        </MudPaper>
+                    }
+
+                    @* Главная таблица товаров MudDataGrid *@
+                    <MudPaper Elevation="1">
+                        <MudDataGrid @ref="_dataGrid"
+                                     T="ProductCatalogItemDto"
+                                     ServerData="LoadServerDataAsync"
+                                     MultiSelection="true"
+                                     @bind-SelectedItems="_selectedProducts"
+                                     Hover="true"
+                                     Dense="true"
+                                     Striped="true"
+                                     FixedHeader="true">
+                            <Columns>
+                                <SelectColumn T="ProductCatalogItemDto" />
+                                <HierarchyColumn T="ProductCatalogItemDto" />
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Статус" SortBy="@(_ => nameof(ProductCatalogSortField.Validity))">
+                                    <CellTemplate>
+                                        @if (context.Item.IsValid)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Filled">
+                                                Валиден
+                                            </MudChip>
+                                        }
+                                        else if (context.Item.IsDraftOnly)
+                                        {
+                                            <MudTooltip Text="@ProductValidationErrorInfo.Describe(ProductValidationError.MissingAssemblyFiles).Description">
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Filled">
+                                                    Черновик
+                                                </MudChip>
+                                            </MudTooltip>
+                                        }
+                                        else
+                                        {
+                                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                                @foreach (var err in context.Item.ValidationErrors)
+                                                {
+                                                    var desc = ProductValidationErrorInfo.Describe(err);
+                                                    <MudTooltip Text="@desc.Description">
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">
+                                                            @desc.ShortTitle
+                                                        </MudChip>
+                                                    </MudTooltip>
+                                                }
+                                            </MudStack>
+                                        }
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Первичный тег" SortBy="@(_ => nameof(ProductCatalogSortField.PrimaryTag))">
+                                    <CellTemplate>
+                                        @if (!string.IsNullOrWhiteSpace(context.Item.PrimaryTagName))
+                                        {
+                                            <MudText Typo="Typo.body2">@context.Item.PrimaryTagName</MudText>
+                                        }
+                                        else
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Error">Вне первичного тега (корень)</MudText>
+                                        }
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Артикул" SortBy="@(_ => nameof(ProductCatalogSortField.Article))">
+                                    <CellTemplate>
+                                        <MudStack Spacing="0">
+                                            <MudText Typo="Typo.body2"><b>@context.Item.Article</b></MudText>
+                                            @if (!string.Equals(context.Item.Article, context.Item.NormalizedArticle, StringComparison.Ordinal))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Warning">
+                                                    Норм.: @context.Item.NormalizedArticle
+                                                </MudText>
+                                            }
+                                        </MudStack>
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Категория" SortBy="@(_ => nameof(ProductCatalogSortField.Category))">
+                                    <CellTemplate>
+                                        <MudText Typo="Typo.body2">@context.Item.CategoryLabel</MudText>
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Формат" SortBy="@(_ => nameof(ProductCatalogSortField.Format))">
+                                    <CellTemplate>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">
+                                            @(context.Item.FormatCode ?? "—")
+                                        </MudChip>
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Непервичные теги" Sortable="false">
+                                    <CellTemplate>
+                                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                            @foreach (var directTag in context.Item.SecondaryTags)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                                    @directTag
+                                                </MudChip>
+                                            }
+                                            @foreach (var inheritedTag in context.Item.InheritedSecondaryTags)
+                                            {
+                                                <MudTooltip Text="Унаследован от категории или формата">
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">
+                                                        @inheritedTag
+                                                    </MudChip>
+                                                </MudTooltip>
+                                            }
+                                        </MudStack>
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Файлы (Обл / Вид / Сб)" SortBy="@(_ => nameof(ProductCatalogSortField.FilesCount))">
+                                    <CellTemplate>
+                                        <MudText Typo="Typo.body2">
+                                            @context.Item.CoversCount / @context.Item.VideoCoversCount / <b>@context.Item.AssemblyFilesCount</b>
+                                        </MudText>
+                                    </CellTemplate>
+                                </TemplateColumn>
+
+                                <TemplateColumn T="ProductCatalogItemDto" Title="Обновлен" SortBy="@(_ => nameof(ProductCatalogSortField.UpdatedAtUtc))">
+                                    <CellTemplate>
+                                        <MudText Typo="Typo.caption">
+                                            @context.Item.UpdatedAtUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm")
+                                        </MudText>
+                                    </CellTemplate>
+                                </TemplateColumn>
 
                                 @if (_canEditProducts)
                                 {
-                                    <MudButton Size="Size.Small"
-                                               Variant="Variant.Filled"
-                                               Color="@(context.Item.IsValid ? Color.Primary : Color.Warning)"
-                                               StartIcon="@(context.Item.IsValid ? Icons.Material.Filled.Edit : Icons.Material.Filled.Build)"
-                                               Disabled="@(!CanExecuteWriteOperation)"
-                                               OnClick="@(() => OpenEditProductDialogAsync(context.Item))">
-                                        @(context.Item.IsValid ? "Редактировать товар" : "Починить товар / переименовать файлы")
-                                    </MudButton>
+                                    <TemplateColumn T="ProductCatalogItemDto" Title="Действия" Sortable="false">
+                                        <CellTemplate>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudTooltip Text="@(context.Item.IsValid ? "Редактировать товар и файлы" : "Починить ошибки товара и файлов на диске")">
+                                                    <span>
+                                                        <MudIconButton Icon="@(context.Item.IsValid ? Icons.Material.Filled.Edit : Icons.Material.Filled.Build)"
+                                                                       Size="Size.Small"
+                                                                       Color="@(context.Item.IsValid ? Color.Primary : Color.Warning)"
+                                                                       Disabled="@(!CanExecuteWriteOperation)"
+                                                                       OnClick="@(() => OpenEditProductDialogAsync(context.Item))" />
+                                                    </span>
+                                                </MudTooltip>
+
+                                                <MudTooltip Text="Удалить товар с диска и из БД">
+                                                    <span>
+                                                        <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline"
+                                                                       Size="Size.Small"
+                                                                       Color="Color.Error"
+                                                                       Disabled="@(!CanExecuteWriteOperation)"
+                                                                       OnClick="@(() => OpenSingleDeleteDialog(context.Item))" />
+                                                    </span>
+                                                </MudTooltip>
+                                            </MudStack>
+                                        </CellTemplate>
+                                    </TemplateColumn>
                                 }
-                            </MudStack>
+                            </Columns>
 
-                            @if (!context.Item.IsValid)
-                            {
-                                <MudAlert Severity="@(context.Item.IsDraftOnly ? Severity.Info : Severity.Error)" Variant="Variant.Outlined" Dense="true">
-                                    <MudText Typo="Typo.subtitle2" Class="mb-1">Причины невалидности товара:</MudText>
-                                    <ul class="ma-0 pl-4">
-                                        @foreach (var err in context.Item.ValidationErrors)
+                            <ChildRowContent>
+                                <MudCard Elevation="0" Class="pa-3" Style="background-color: var(--mud-palette-background-grey);">
+                                    <MudStack Spacing="2">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap">
+                                            <MudText Typo="Typo.subtitle2">
+                                                Детали товара • ProductId (<code>.typoerp_id</code>): <code>@context.Item.Id</code>
+                                            </MudText>
+
+                                            @if (_canEditProducts)
+                                            {
+                                                <MudButton Size="Size.Small"
+                                                           Variant="Variant.Filled"
+                                                           Color="@(context.Item.IsValid ? Color.Primary : Color.Warning)"
+                                                           StartIcon="@(context.Item.IsValid ? Icons.Material.Filled.Edit : Icons.Material.Filled.Build)"
+                                                           Disabled="@(!CanExecuteWriteOperation)"
+                                                           OnClick="@(() => OpenEditProductDialogAsync(context.Item))">
+                                                    @(context.Item.IsValid ? "Редактировать товар" : "Починить товар / переименовать файлы")
+                                                </MudButton>
+                                            }
+                                        </MudStack>
+
+                                        @if (!context.Item.IsValid)
                                         {
-                                            var desc = ProductValidationErrorInfo.Describe(err);
-                                            <li><b>@desc.ShortTitle:</b> @desc.Description</li>
+                                            <MudAlert Severity="@(context.Item.IsDraftOnly ? Severity.Info : Severity.Error)" Variant="Variant.Outlined" Dense="true">
+                                                <MudText Typo="Typo.subtitle2" Class="mb-1">Причины невалидности товара:</MudText>
+                                                <ul class="ma-0 pl-4">
+                                                    @foreach (var err in context.Item.ValidationErrors)
+                                                    {
+                                                        var desc = ProductValidationErrorInfo.Describe(err);
+                                                        <li><b>@desc.ShortTitle:</b> @desc.Description</li>
+                                                    }
+                                                </ul>
+                                            </MudAlert>
                                         }
-                                    </ul>
-                                </MudAlert>
-                            }
 
-                            @if (context.Item.Files.Count == 0)
-                            {
-                                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                                    В папке товара пока нет неигнорируемых файлов.
+                                        @if (context.Item.Files.Count == 0)
+                                        {
+                                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                                В папке товара пока нет неигнорируемых файлов.
+                                            </MudText>
+                                        }
+                                        else
+                                        {
+                                            <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Имя файла на диске</th>
+                                                        <th>Тип</th>
+                                                        <th>Префикс</th>
+                                                        <th>Расширение</th>
+                                                        <th>Размер</th>
+                                                        <th>XxHash64</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var file in context.Item.Files)
+                                                    {
+                                                        <tr>
+                                                            <td><code>@file.FileName</code></td>
+                                                            <td>@FormatFileKind(file.Kind)</td>
+                                                            <td><code>@file.Prefix</code></td>
+                                                            <td><code>@file.Extension</code></td>
+                                                            <td>@FormatFileSize(file.SizeBytes)</td>
+                                                            <td><code>@file.XxHash64</code></td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </MudSimpleTable>
+                                        }
+                                    </MudStack>
+                                </MudCard>
+                            </ChildRowContent>
+
+                            <NoRecordsContent>
+                                <MudText Typo="Typo.body1" Class="pa-4">
+                                    Товары по заданным условиям фильтрации не найдены.
                                 </MudText>
-                            }
-                            else
-                            {
-                                <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
-                                    <thead>
-                                        <tr>
-                                            <th>Имя файла на диске</th>
-                                            <th>Тип</th>
-                                            <th>Префикс</th>
-                                            <th>Расширение</th>
-                                            <th>Размер</th>
-                                            <th>XxHash64</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var file in context.Item.Files)
-                                        {
-                                            <tr>
-                                                <td><code>@file.FileName</code></td>
-                                                <td>@FormatFileKind(file.Kind)</td>
-                                                <td><code>@file.Prefix</code></td>
-                                                <td><code>@file.Extension</code></td>
-                                                <td>@FormatFileSize(file.SizeBytes)</td>
-                                                <td><code>@file.XxHash64</code></td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </MudSimpleTable>
-                            }
-                        </MudStack>
-                    </MudCard>
-                </ChildRowContent>
+                            </NoRecordsContent>
 
-                <NoRecordsContent>
-                    <MudText Typo="Typo.body1" Class="pa-4">
-                        Товары по заданным условиям фильтрации не найдены.
-                    </MudText>
-                </NoRecordsContent>
+                            <PagerContent>
+                                <MudDataGridPager T="ProductCatalogItemDto" PageSizeOptions="@(new[] { 10, 25, 50, 100 })" />
+                            </PagerContent>
+                        </MudDataGrid>
+                    </MudPaper>
+                </MudStack>
+            </MudTabPanel>
 
-                <PagerContent>
-                    <MudDataGridPager T="ProductCatalogItemDto" PageSizeOptions="@(new[] { 10, 25, 50, 100 })" />
-                </PagerContent>
-            </MudDataGrid>
-        </MudPaper>
+            <MudTabPanel Text="Категории, Форматы и Теги" Icon="@Icons.Material.Filled.AccountTree">
+                <div class="pt-3">
+                    <ProductsTaxonomyPanel @ref="_taxonomyPanel"
+                                           SessionId="@CircuitSession.SessionId"
+                                           CanEditProducts="@_canEditProducts"
+                                           IsLockHeldByCurrentSession="@IsLockHeldByCurrentSession"
+                                           IsStorageRootAccessible="@(_lookups?.IsStorageRootAccessible ?? true)"
+                                           OnDataModified="HandleTaxonomyModifiedAsync"
+                                           OnFilterByCategory="FilterCatalogByCategoryAsync"
+                                           OnFilterByFormat="FilterCatalogByFormatAsync"
+                                           OnFilterByPrimaryTag="FilterCatalogByPrimaryTagAsync"
+                                           OnFilterBySecondaryTag="FilterCatalogBySecondaryTagAsync" />
+                </div>
+            </MudTabPanel>
+        </MudTabs>
     </MudStack>
 
     @* Диалоги создания/редактирования/починки и массовых операций *@
@@ -559,9 +577,11 @@ else
     private Task<AuthenticationState>? AuthenticationStateTask { get; set; }
 
     private MudDataGrid<ProductCatalogItemDto>? _dataGrid;
+    private ProductsTaxonomyPanel? _taxonomyPanel;
     private ProductCatalogLookups? _lookups;
     private ProductSyncResult? _lastSyncResult;
 
+    private int _activeTabIndex;
     private bool _canViewProducts;
     private bool _canEditProducts;
     private bool _canSyncProducts;
@@ -672,6 +692,32 @@ else
         _totalAllCount = _lookups.TotalProductsCount;
         _totalValidCount = _lookups.ValidProductsCount;
         _totalInvalidCount = _lookups.InvalidProductsCount;
+
+        if (
+            _selectedPrimaryTagId.HasValue
+            && !_lookups.PrimaryTags.Any(t => t.Id == _selectedPrimaryTagId.Value)
+        )
+            _selectedPrimaryTagId = null;
+
+        if (
+            _selectedCategoryId.HasValue
+            && !_lookups.Categories.Any(c => c.Id == _selectedCategoryId.Value)
+        )
+            _selectedCategoryId = null;
+
+        if (
+            _selectedFormatId.HasValue
+            && !_lookups.Formats.Any(f => f.Id == _selectedFormatId.Value)
+        )
+            _selectedFormatId = null;
+
+        if (_selectedSecondaryTagIds.Count > 0)
+        {
+            var validSecIds = _lookups.SecondaryTags.Select(t => t.Id).ToHashSet();
+            _selectedSecondaryTagIds = _selectedSecondaryTagIds
+                .Where(validSecIds.Contains)
+                .ToList();
+        }
     }
 
     private async Task<GridData<ProductCatalogItemDto>> LoadServerDataAsync(
@@ -785,10 +831,57 @@ else
         await ReloadCatalogDataAsync();
     }
 
+    private async Task HandleTaxonomyModifiedAsync()
+    {
+        await RefreshLookupsAsync();
+        if (_dataGrid is not null)
+            await _dataGrid.ReloadServerData();
+    }
+
     private async Task ReloadCatalogDataAsync()
     {
         _selectedProducts.Clear();
         await RefreshLookupsAsync();
+        if (_dataGrid is not null)
+            await _dataGrid.ReloadServerData();
+        if (_taxonomyPanel is not null)
+            await _taxonomyPanel.ReloadAsync();
+    }
+
+    private async Task FilterCatalogByCategoryAsync(Guid categoryId)
+    {
+        _selectedCategoryId = categoryId;
+        _selectedFormatId = null;
+        _activeTabIndex = 0;
+
+        if (_dataGrid is not null)
+            await _dataGrid.ReloadServerData();
+    }
+
+    private async Task FilterCatalogByFormatAsync((Guid CategoryId, Guid FormatId) target)
+    {
+        _selectedCategoryId = target.CategoryId;
+        _selectedFormatId = target.FormatId;
+        _activeTabIndex = 0;
+
+        if (_dataGrid is not null)
+            await _dataGrid.ReloadServerData();
+    }
+
+    private async Task FilterCatalogByPrimaryTagAsync(Guid primaryTagId)
+    {
+        _selectedPrimaryTagId = primaryTagId;
+        _activeTabIndex = 0;
+
+        if (_dataGrid is not null)
+            await _dataGrid.ReloadServerData();
+    }
+
+    private async Task FilterCatalogBySecondaryTagAsync(Guid secondaryTagId)
+    {
+        _selectedSecondaryTagIds = [secondaryTagId];
+        _activeTabIndex = 0;
+
         if (_dataGrid is not null)
             await _dataGrid.ReloadServerData();
     }

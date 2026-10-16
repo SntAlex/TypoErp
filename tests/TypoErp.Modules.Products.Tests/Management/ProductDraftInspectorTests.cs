@@ -188,11 +188,12 @@ public sealed class ProductDraftInspectorTests
             primaryTagName: "тег 1",
             article: "45к товар",
             existingFiles: existingFiles,
-            uploads: [],
+            uploads: [new ProductFileUpload("card_final.pdf", [1, 2, 3])],
             options: _options
         );
 
         result.HasDuplicateTargetFileNames.ShouldBeTrue();
+        result.CanSavePrimaryTagAndArticle.ShouldBeFalse();
         result.IsValid.ShouldBeFalse();
         result.ValidationErrors.ShouldContain(ProductValidationError.NormalizationConflict);
     }

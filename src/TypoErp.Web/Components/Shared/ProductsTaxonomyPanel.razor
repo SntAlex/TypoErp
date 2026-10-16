@@ -1,0 +1,1038 @@
+@inject IProductCatalogQueryService CatalogQueryService
+@inject IProductManagementService ManagementService
+@inject ProductsStorageOptions StorageOptions
+@inject ISnackbar Snackbar
+
+<MudStack Spacing="4">
+    @* Секция 1: Дерево Категория -> Форматы *@
+    <MudPaper Elevation="1" Class="pa-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2" Class="mb-3">
+            <MudStack Spacing="0">
+                <MudText Typo="Typo.h6">Дерево «Категории → Форматы»</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                    Категории выводятся автоматически из единого префикса файлов сборки, а форматы — из артикула до первого пробела.
+                    Форматы уникальны внутри каждой категории.
+                </MudText>
+            </MudStack>
+
+            <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+                @if (_overview is not null)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                        Активных категорий: @_overview.ActiveCategoriesCount (форматов: @_overview.ActiveFormatsCount)
+                    </MudChip>
+                    <MudChip T="string" Size="Size.Small" Color="@(_overview.DeletedCategoriesCount + _overview.DeletedFormatsCount > 0 ? Color.Warning : Color.Default)" Variant="Variant.Outlined">
+                        Мягко удаленных (Soft Delete): категорий @_overview.DeletedCategoriesCount, форматов @_overview.DeletedFormatsCount
+                    </MudChip>
+                }
+
+                <MudSwitch T="bool"
+                           Value="@_includeDeleted"
+                           ValueChanged="OnIncludeDeletedChangedAsync"
+                           Color="Color.Primary"
+                           Label="Показывать мягко удаленные (IsDeleted)" />
+            </MudStack>
+        </MudStack>
+
+        <MudGrid Spacing="2" Class="mb-3">
+            <MudItem xs="12" md="6">
+                <MudTextField T="string"
+                              @bind-Value="_treeSearchText"
+                              Immediate="true"
+                              Label="Поиск по коду/названию категории, формату или тегу"
+                              Placeholder="Например: card, наклейки или 45к"
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Adornment="Adornment.Start"
+                              AdornmentIcon="@Icons.Material.Filled.Search"
+                              Clearable="true" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_isLoading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+        }
+        else if (GetFilteredCategories().Count == 0)
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+                Категории и форматы не найдены. Они появятся автоматически при создании товаров с файлами сборки или после синхронизации с диском.
+            </MudAlert>
+        }
+        else
+        {
+            <MudStack Spacing="2">
+                @foreach (var category in GetFilteredCategories())
+                {
+                    <MudPaper Outlined="true"
+                              Class="pa-3"
+                              Style="@(category.IsDeleted ? "border-left: 4px solid var(--mud-palette-warning); opacity: 0.88;" : "border-left: 4px solid var(--mud-palette-primary);")">
+                        <MudStack Spacing="2">
+                            @* Шапка категории *@
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Wrap="Wrap.Wrap" Spacing="2">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+                                    <MudIcon Icon="@Icons.Material.Filled.FolderSpecial"
+                                             Color="@(category.IsDeleted ? Color.Warning : Color.Primary)" />
+
+                                    <MudText Typo="Typo.subtitle1">
+                                        <b>@(string.IsNullOrWhiteSpace(category.DisplayName) ? category.Code : category.DisplayName)</b>
+                                    </MudText>
+
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                        код: @category.Code
+                                    </MudChip>
+
+                                    @if (category.IsDeleted)
+                                    {
+                                        <MudTooltip Text="У категории сейчас нет привязанных товаров. При появлении товара с этим префиксом сборки она автоматически восстановится со своим названием и тегами.">
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">
+                                                Мягко удалена (IsDeleted)
+                                            </MudChip>
+                                        </MudTooltip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                                            Активна
+                                        </MudChip>
+                                    }
+
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">
+                                        Товаров: @category.TotalProductsCount (вал.: @category.ValidProductsCount, ошиб.: @category.InvalidProductsCount)
+                                    </MudChip>
+                                </MudStack>
+
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                    @if (category.TotalProductsCount > 0 && OnFilterByCategory.HasDelegate)
+                                    {
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Text"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.FilterAlt"
+                                                   OnClick="@(() => OnFilterByCategory.InvokeAsync(category.Id))">
+                                            Товары категории (@category.TotalProductsCount)
+                                        </MudButton>
+                                    }
+
+                                    @if (CanEditProducts)
+                                    {
+                                        <MudButton Size="Size.Small"
+                                                   Variant="Variant.Outlined"
+                                                   Color="Color.Primary"
+                                                   StartIcon="@Icons.Material.Filled.Edit"
+                                                   Disabled="@(!CanExecuteDbWriteOperation)"
+                                                   OnClick="@(() => OpenCategoryEditor(category))">
+                                            Название и теги категории
+                                        </MudButton>
+                                    }
+                                </MudStack>
+                            </MudStack>
+
+                            @* Непервичные теги категории *@
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Непервичные теги категории:</MudText>
+                                @if (category.SecondaryTags.Count == 0)
+                                {
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">не назначены</MudText>
+                                }
+                                @foreach (var catTag in category.SecondaryTags)
+                                {
+                                    <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                        @catTag
+                                    </MudChip>
+                                }
+                            </MudStack>
+
+                            @* Встроенная панель редактирования выбранной категории *@
+                            @if (_editingCategoryId == category.Id)
+                            {
+                                <MudPaper Elevation="0" Class="pa-3" Style="background-color: var(--mud-palette-background-grey); border-radius: 6px;">
+                                    <MudStack Spacing="2">
+                                        <MudText Typo="Typo.subtitle2">
+                                            Настройка категории <code>@category.Code</code>
+                                        </MudText>
+
+                                        <MudGrid Spacing="2">
+                                            <MudItem xs="12" md="5">
+                                                <MudTextField T="string"
+                                                              @bind-Value="_categoryDisplayNameInput"
+                                                              Label="Отображаемое название категории (DisplayName)"
+                                                              Placeholder="Например: Наклейки и стикерпаки"
+                                                              Variant="Variant.Outlined"
+                                                              Margin="Margin.Dense"
+                                                              Clearable="true" />
+                                            </MudItem>
+
+                                            <MudItem xs="12" md="7">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                                    <MudTextField T="string"
+                                                                  @bind-Value="_categoryNewTagInput"
+                                                                  Label="Добавить непервичный тег категории"
+                                                                  Placeholder="Например: плотная бумага"
+                                                                  Variant="Variant.Outlined"
+                                                                  Margin="Margin.Dense"
+                                                                  Immediate="true" />
+                                                    <MudButton Variant="Variant.Outlined"
+                                                               Color="Color.Primary"
+                                                               Size="Size.Small"
+                                                               StartIcon="@Icons.Material.Filled.Add"
+                                                               OnClick="AddTagToCategoryEditor">
+                                                        Добавить
+                                                    </MudButton>
+                                                </MudStack>
+                                            </MudItem>
+                                        </MudGrid>
+
+                                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Выбранные теги категории:</MudText>
+                                            @if (_categorySelectedTags.Count == 0)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">нет тегов</MudText>
+                                            }
+                                            @foreach (var tag in _categorySelectedTags.OrderBy(t => t, StringComparer.Ordinal))
+                                            {
+                                                <MudChip T="string"
+                                                         Size="Size.Small"
+                                                         Color="Color.Primary"
+                                                         Variant="Variant.Filled"
+                                                         OnClose="@(() => _categorySelectedTags.Remove(tag))">
+                                                    @tag
+                                                </MudChip>
+                                            }
+                                        </MudStack>
+
+                                        @if (_overview is { SecondaryTags.Count: > 0 })
+                                        {
+                                            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Быстрый выбор из справочника:</MudText>
+                                                @foreach (var secTag in _overview.SecondaryTags)
+                                                {
+                                                    var isSelected = _categorySelectedTags.Contains(secTag.Name);
+                                                    <MudChip T="string"
+                                                             Size="Size.Small"
+                                                             Color="@(isSelected ? Color.Primary : Color.Default)"
+                                                             Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                             OnClick="@(() => ToggleSetItem(_categorySelectedTags, secTag.Name))">
+                                                        @secTag.Name
+                                                    </MudChip>
+                                                }
+                                            </MudStack>
+                                        }
+
+                                        <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+                                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="CancelCategoryEditor">
+                                                Отмена
+                                            </MudButton>
+                                            <MudButton Size="Size.Small"
+                                                       Variant="Variant.Filled"
+                                                       Color="Color.Primary"
+                                                       StartIcon="@Icons.Material.Filled.Save"
+                                                       Disabled="@_isBusy"
+                                                       OnClick="@(() => SaveCategoryAsync(category.Id))">
+                                                Сохранить категорию
+                                            </MudButton>
+                                        </MudStack>
+                                    </MudStack>
+                                </MudPaper>
+                            }
+
+                            @* Вложенная таблица форматов внутри категории *@
+                            @if (category.Formats.Count == 0)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="pl-6">
+                                    В этой категории пока нет форматов.
+                                </MudText>
+                            }
+                            else
+                            {
+                                <div class="pl-4">
+                                    <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                                        <thead>
+                                            <tr>
+                                                <th>Код формата (внутри <code>@category.Code</code>)</th>
+                                                <th>Статус</th>
+                                                <th>Товаров (Вал. / Ошиб.)</th>
+                                                <th>Непервичные теги формата (и унаследованные от категории)</th>
+                                                <th>Действия</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var format in category.Formats)
+                                            {
+                                                <tr style="@(format.IsDeleted ? "opacity: 0.72;" : string.Empty)">
+                                                    <td>
+                                                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                                            <b>@format.Code</b>
+                                                        </MudChip>
+                                                    </td>
+                                                    <td>
+                                                        @if (format.IsDeleted)
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">
+                                                                Мягко удален (IsDeleted)
+                                                            </MudChip>
+                                                        }
+                                                        else
+                                                        {
+                                                            <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">
+                                                                Активен
+                                                            </MudChip>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <MudText Typo="Typo.body2">
+                                                            <b>@format.TotalProductsCount</b> (@format.ValidProductsCount / @format.InvalidProductsCount)
+                                                        </MudText>
+                                                    </td>
+                                                    <td>
+                                                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                                            @if (format.SecondaryTags.Count == 0 && format.InheritedCategorySecondaryTags.Count == 0)
+                                                            {
+                                                                <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                                                            }
+                                                            @foreach (var directTag in format.SecondaryTags)
+                                                            {
+                                                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                                                    @directTag
+                                                                </MudChip>
+                                                            }
+                                                            @foreach (var inheritedTag in format.InheritedCategorySecondaryTags)
+                                                            {
+                                                                <MudTooltip Text="Унаследован от родительской категории">
+                                                                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">
+                                                                        @inheritedTag (от категории)
+                                                                    </MudChip>
+                                                                </MudTooltip>
+                                                            }
+                                                        </MudStack>
+                                                    </td>
+                                                    <td>
+                                                        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                            @if (format.TotalProductsCount > 0 && OnFilterByFormat.HasDelegate)
+                                                            {
+                                                                <MudTooltip Text="Показать товары этого формата в таблице">
+                                                                    <MudIconButton Icon="@Icons.Material.Filled.FilterAlt"
+                                                                                   Size="Size.Small"
+                                                                                   Color="Color.Primary"
+                                                                                   OnClick="@(() => OnFilterByFormat.InvokeAsync((category.Id, format.Id)))" />
+                                                                </MudTooltip>
+                                                            }
+
+                                                            @if (CanEditProducts)
+                                                            {
+                                                                <MudButton Size="Size.Small"
+                                                                           Variant="Variant.Text"
+                                                                           Color="Color.Primary"
+                                                                           StartIcon="@Icons.Material.Filled.Label"
+                                                                           Disabled="@(!CanExecuteDbWriteOperation)"
+                                                                           OnClick="@(() => OpenFormatEditor(format))">
+                                                                    Теги формата
+                                                                </MudButton>
+                                                            }
+                                                        </MudStack>
+                                                    </td>
+                                                </tr>
+
+                                                @if (_editingFormatId == format.Id)
+                                                {
+                                                    <tr>
+                                                        <td colspan="5">
+                                                            <MudPaper Elevation="0" Class="pa-3 my-1" Style="background-color: var(--mud-palette-background-grey);">
+                                                                <MudStack Spacing="2">
+                                                                    <MudText Typo="Typo.subtitle2">
+                                                                        Непервичные теги формата <code>@format.Code</code> в категории <code>@category.DisplayLabel</code>
+                                                                    </MudText>
+
+                                                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                                                        <MudTextField T="string"
+                                                                                      @bind-Value="_formatNewTagInput"
+                                                                                      Label="Добавить непервичный тег формату"
+                                                                                      Placeholder="Например: карманный размер"
+                                                                                      Variant="Variant.Outlined"
+                                                                                      Margin="Margin.Dense"
+                                                                                      Immediate="true" />
+                                                                        <MudButton Variant="Variant.Outlined"
+                                                                                   Color="Color.Primary"
+                                                                                   Size="Size.Small"
+                                                                                   StartIcon="@Icons.Material.Filled.Add"
+                                                                                   OnClick="AddTagToFormatEditor">
+                                                                            Добавить
+                                                                        </MudButton>
+                                                                    </MudStack>
+
+                                                                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                                                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Выбранные теги формата:</MudText>
+                                                                        @if (_formatSelectedTags.Count == 0)
+                                                                        {
+                                                                            <MudText Typo="Typo.caption" Color="Color.Secondary">нет собственных тегов</MudText>
+                                                                        }
+                                                                        @foreach (var tag in _formatSelectedTags.OrderBy(t => t, StringComparer.Ordinal))
+                                                                        {
+                                                                            <MudChip T="string"
+                                                                                     Size="Size.Small"
+                                                                                     Color="Color.Primary"
+                                                                                     Variant="Variant.Filled"
+                                                                                     OnClose="@(() => _formatSelectedTags.Remove(tag))">
+                                                                                @tag
+                                                                            </MudChip>
+                                                                        }
+                                                                    </MudStack>
+
+                                                                    @if (_overview is { SecondaryTags.Count: > 0 })
+                                                                    {
+                                                                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+                                                                            <MudText Typo="Typo.caption" Color="Color.Secondary">Справочник тегов:</MudText>
+                                                                            @foreach (var secTag in _overview.SecondaryTags)
+                                                                            {
+                                                                                var isSelected = _formatSelectedTags.Contains(secTag.Name);
+                                                                                <MudChip T="string"
+                                                                                         Size="Size.Small"
+                                                                                         Color="@(isSelected ? Color.Primary : Color.Default)"
+                                                                                         Variant="@(isSelected ? Variant.Filled : Variant.Outlined)"
+                                                                                         OnClick="@(() => ToggleSetItem(_formatSelectedTags, secTag.Name))">
+                                                                                    @secTag.Name
+                                                                                </MudChip>
+                                                                            }
+                                                                        </MudStack>
+                                                                    }
+
+                                                                    <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="2">
+                                                                        <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="CancelFormatEditor">
+                                                                            Отмена
+                                                                        </MudButton>
+                                                                        <MudButton Size="Size.Small"
+                                                                                   Variant="Variant.Filled"
+                                                                                   Color="Color.Primary"
+                                                                                   StartIcon="@Icons.Material.Filled.Save"
+                                                                                   Disabled="@_isBusy"
+                                                                                   OnClick="@(() => SaveFormatTagsAsync(format.Id))">
+                                                                            Сохранить теги формата
+                                                                        </MudButton>
+                                                                    </MudStack>
+                                                                </MudStack>
+                                                            </MudPaper>
+                                                        </td>
+                                                    </tr>
+                                                }
+                                            }
+                                        </tbody>
+                                    </MudSimpleTable>
+                                </div>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                }
+            </MudStack>
+        }
+    </MudPaper>
+
+    @* Секция 2: Управление первичными тегами (папками 1-го уровня) и справочником непервичных тегов *@
+    <MudGrid Spacing="3">
+        @* 2.1. Первичные теги на диске *@
+        <MudItem xs="12" lg="6">
+            <MudPaper Elevation="1" Class="pa-4 h-100">
+                <MudStack Spacing="2">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.h6">Первичные теги (папки 1-го уровня на диске)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Переименование первичного тега физически переименовывает папку 1-го уровня в хранилище и пересчитывает валидацию товаров внутри него.
+                        </MudText>
+                    </MudStack>
+
+                    @if (_overview is null || _overview.PrimaryTags.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Первичные теги отсутствуют.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                            <thead>
+                                <tr>
+                                    <th>Имя папки первичного тега</th>
+                                    <th>Вместимость (Товаров / Лимит)</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var primaryTag in _overview.PrimaryTags)
+                                {
+                                    var isOverCapacity = primaryTag.TotalProductsCount > primaryTag.MaxCapacity;
+                                    <tr>
+                                        <td>
+                                            <code>@primaryTag.Name</code>
+                                            @if (!string.Equals(primaryTag.Name, primaryTag.NormalizedName, StringComparison.Ordinal))
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Warning">
+                                                    (норм.: @primaryTag.NormalizedName)
+                                                </MudText>
+                                            }
+                                        </td>
+                                        <td>
+                                            <MudChip T="string"
+                                                     Size="Size.Small"
+                                                     Color="@(isOverCapacity ? Color.Error : Color.Default)"
+                                                     Variant="Variant.Outlined">
+                                                @primaryTag.TotalProductsCount / @primaryTag.MaxCapacity
+                                            </MudChip>
+                                        </td>
+                                        <td>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                @if (OnFilterByPrimaryTag.HasDelegate)
+                                                {
+                                                    <MudTooltip Text="Показать товары этого первичного тега">
+                                                        <MudIconButton Icon="@Icons.Material.Filled.FilterAlt"
+                                                                       Size="Size.Small"
+                                                                       Color="Color.Primary"
+                                                                       OnClick="@(() => OnFilterByPrimaryTag.InvokeAsync(primaryTag.Id))" />
+                                                    </MudTooltip>
+                                                }
+
+                                                @if (CanEditProducts)
+                                                {
+                                                    <MudButton Size="Size.Small"
+                                                               Variant="Variant.Text"
+                                                               Color="Color.Primary"
+                                                               StartIcon="@Icons.Material.Filled.DriveFileRenameOutline"
+                                                               Disabled="@(!CanExecuteDiskWriteOperation)"
+                                                               OnClick="@(() => OpenPrimaryTagRename(primaryTag))">
+                                                        Переименовать
+                                                    </MudButton>
+                                                }
+                                            </MudStack>
+                                        </td>
+                                    </tr>
+
+                                    @if (_renamingPrimaryTagId == primaryTag.Id)
+                                    {
+                                        var validation = PrimaryTagValidator.Validate(
+                                            _primaryTagNewNameInput,
+                                            StorageOptions,
+                                            primaryTag.TotalProductsCount
+                                        );
+                                        <tr>
+                                            <td colspan="3">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="py-1">
+                                                    <MudTextField T="string"
+                                                                  @bind-Value="_primaryTagNewNameInput"
+                                                                  Label="Новое имя первичного тега"
+                                                                  HelperText="@($"Нормализованное имя: «{validation.NormalizedName}»")"
+                                                                  Variant="Variant.Outlined"
+                                                                  Margin="Margin.Dense"
+                                                                  Immediate="true" />
+                                                    <MudButton Size="Size.Small"
+                                                               Variant="Variant.Filled"
+                                                               Color="Color.Primary"
+                                                               Disabled="@(_isBusy || !validation.IsValid)"
+                                                               OnClick="@(() => ExecuteRenamePrimaryTagAsync(primaryTag.Id))">
+                                                        Сохранить
+                                                    </MudButton>
+                                                    <MudButton Size="Size.Small"
+                                                               Variant="Variant.Text"
+                                                               OnClick="@(() => _renamingPrimaryTagId = null)">
+                                                        Отмена
+                                                    </MudButton>
+                                                </MudStack>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        @* 2.2. Справочник непервичных тегов *@
+        <MudItem xs="12" lg="6">
+            <MudPaper Elevation="1" Class="pa-4 h-100">
+                <MudStack Spacing="2">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.h6">Справочник непервичных тегов (PostgreSQL)</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                            Непервичные теги могут назначаться напрямую на товары, а также на категории и форматы (с автоматическим наследованием).
+                        </MudText>
+                    </MudStack>
+
+                    @if (CanEditProducts)
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                            <MudTextField T="string"
+                                          @bind-Value="_createSecondaryTagInput"
+                                          Label="Создать новый непервичный тег"
+                                          Placeholder="Например: сезонный хит"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Immediate="true"
+                                          Disabled="@(!CanExecuteDbWriteOperation)" />
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Add"
+                                       Disabled="@(!CanExecuteDbWriteOperation || _isBusy || string.IsNullOrWhiteSpace(StringNormalizer.Normalize(_createSecondaryTagInput)))"
+                                       OnClick="CreateSecondaryTagAsync">
+                                Создать тег
+                            </MudButton>
+                        </MudStack>
+                    }
+
+                    @if (_overview is null || _overview.SecondaryTags.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            Непервичные теги еще не созданы.
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Hover="true" Bordered="true" Style="overflow-x: auto;">
+                            <thead>
+                                <tr>
+                                    <th>Тег</th>
+                                    <th>Использование (Тов. / Кат. / Форм.)</th>
+                                    <th>Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var secTag in _overview.SecondaryTags)
+                                {
+                                    <tr>
+                                        <td>
+                                            <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Outlined">
+                                                @secTag.Name
+                                            </MudChip>
+                                        </td>
+                                        <td>
+                                            <MudText Typo="Typo.body2">
+                                                @secTag.DirectProductsCount / @secTag.CategoriesCount / @secTag.FormatsCount
+                                            </MudText>
+                                        </td>
+                                        <td>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                @if (OnFilterBySecondaryTag.HasDelegate)
+                                                {
+                                                    <MudTooltip Text="Отфильтровать товары по этому тегу (включая унаследованные)">
+                                                        <MudIconButton Icon="@Icons.Material.Filled.FilterAlt"
+                                                                       Size="Size.Small"
+                                                                       Color="Color.Primary"
+                                                                       OnClick="@(() => OnFilterBySecondaryTag.InvokeAsync(secTag.Id))" />
+                                                    </MudTooltip>
+                                                }
+
+                                                @if (CanEditProducts)
+                                                {
+                                                    <MudTooltip Text="Переименовать непервичный тег">
+                                                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                                       Size="Size.Small"
+                                                                       Color="Color.Primary"
+                                                                       Disabled="@(!CanExecuteDbWriteOperation)"
+                                                                       OnClick="@(() => OpenSecondaryTagRename(secTag))" />
+                                                    </MudTooltip>
+
+                                                    <MudTooltip Text="Удалить непервичный тег из БД">
+                                                        <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline"
+                                                                       Size="Size.Small"
+                                                                       Color="Color.Error"
+                                                                       Disabled="@(!CanExecuteDbWriteOperation || _isBusy)"
+                                                                       OnClick="@(() => DeleteSecondaryTagAsync(secTag))" />
+                                                    </MudTooltip>
+                                                }
+                                            </MudStack>
+                                        </td>
+                                    </tr>
+
+                                    @if (_renamingSecondaryTagId == secTag.Id)
+                                    {
+                                        var normalizedSec = StringNormalizer.Normalize(_secondaryTagNewNameInput);
+                                        <tr>
+                                            <td colspan="3">
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="py-1">
+                                                    <MudTextField T="string"
+                                                                  @bind-Value="_secondaryTagNewNameInput"
+                                                                  Label="Новое имя непервичного тега"
+                                                                  HelperText="@($"Нормализованное имя: «{normalizedSec}»")"
+                                                                  Variant="Variant.Outlined"
+                                                                  Margin="Margin.Dense"
+                                                                  Immediate="true" />
+                                                    <MudButton Size="Size.Small"
+                                                               Variant="Variant.Filled"
+                                                               Color="Color.Primary"
+                                                               Disabled="@(_isBusy || string.IsNullOrEmpty(normalizedSec))"
+                                                               OnClick="@(() => ExecuteRenameSecondaryTagAsync(secTag.Id))">
+                                                        Сохранить
+                                                    </MudButton>
+                                                    <MudButton Size="Size.Small"
+                                                               Variant="Variant.Text"
+                                                               OnClick="@(() => _renamingSecondaryTagId = null)">
+                                                        Отмена
+                                                    </MudButton>
+                                                </MudStack>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudStack>
+
+@code {
+    private ProductsTaxonomyOverviewDto? _overview;
+    private bool _includeDeleted = true;
+    private string? _treeSearchText;
+    private bool _isLoading;
+    private bool _isBusy;
+
+    private Guid? _editingCategoryId;
+    private string? _categoryDisplayNameInput;
+    private string _categoryNewTagInput = string.Empty;
+    private readonly HashSet<string> _categorySelectedTags = new(StringComparer.Ordinal);
+
+    private Guid? _editingFormatId;
+    private string _formatNewTagInput = string.Empty;
+    private readonly HashSet<string> _formatSelectedTags = new(StringComparer.Ordinal);
+
+    private Guid? _renamingPrimaryTagId;
+    private string _primaryTagNewNameInput = string.Empty;
+
+    private string _createSecondaryTagInput = string.Empty;
+    private Guid? _renamingSecondaryTagId;
+    private string _secondaryTagNewNameInput = string.Empty;
+
+    [Parameter]
+    public string SessionId { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool CanEditProducts { get; set; }
+
+    [Parameter]
+    public bool IsLockHeldByCurrentSession { get; set; }
+
+    [Parameter]
+    public bool IsStorageRootAccessible { get; set; } = true;
+
+    [Parameter]
+    public EventCallback OnDataModified { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnFilterByCategory { get; set; }
+
+    [Parameter]
+    public EventCallback<(Guid CategoryId, Guid FormatId)> OnFilterByFormat { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnFilterByPrimaryTag { get; set; }
+
+    [Parameter]
+    public EventCallback<Guid> OnFilterBySecondaryTag { get; set; }
+
+    private bool CanExecuteDbWriteOperation =>
+        CanEditProducts && IsLockHeldByCurrentSession && !_isBusy;
+
+    private bool CanExecuteDiskWriteOperation =>
+        CanExecuteDbWriteOperation && IsStorageRootAccessible;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    public async Task ReloadAsync()
+    {
+        _isLoading = true;
+        try
+        {
+            _overview = await CatalogQueryService.GetTaxonomyOverviewAsync(_includeDeleted);
+        }
+        finally
+        {
+            _isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnIncludeDeletedChangedAsync(bool value)
+    {
+        _includeDeleted = value;
+        await ReloadAsync();
+    }
+
+    private IReadOnlyList<CategoryTreeItemDto> GetFilteredCategories()
+    {
+        if (_overview is null)
+            return [];
+
+        if (string.IsNullOrWhiteSpace(_treeSearchText))
+            return _overview.Categories;
+
+        var search = _treeSearchText.Trim();
+        var normalizedSearch = StringNormalizer.Normalize(search);
+
+        return _overview
+            .Categories.Where(c =>
+                c.Code.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)
+                || (
+                    !string.IsNullOrWhiteSpace(c.DisplayName)
+                    && c.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)
+                )
+                || c.SecondaryTags.Any(t =>
+                    t.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)
+                )
+                || c.Formats.Any(f =>
+                    f.Code.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)
+                    || f.SecondaryTags.Any(t =>
+                        t.Contains(normalizedSearch, StringComparison.OrdinalIgnoreCase)
+                    )
+                )
+            )
+            .ToList();
+    }
+
+    private void OpenCategoryEditor(CategoryTreeItemDto category)
+    {
+        _editingCategoryId = category.Id;
+        _categoryDisplayNameInput = category.DisplayName;
+        _categoryNewTagInput = string.Empty;
+        _categorySelectedTags.Clear();
+        foreach (var tag in category.SecondaryTags)
+            _categorySelectedTags.Add(tag);
+    }
+
+    private void CancelCategoryEditor()
+    {
+        _editingCategoryId = null;
+        _categoryNewTagInput = string.Empty;
+        _categorySelectedTags.Clear();
+    }
+
+    private void AddTagToCategoryEditor()
+    {
+        var normalized = StringNormalizer.Normalize(_categoryNewTagInput);
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        _categorySelectedTags.Add(normalized);
+        _categoryNewTagInput = string.Empty;
+    }
+
+    private async Task SaveCategoryAsync(Guid categoryId)
+    {
+        _isBusy = true;
+        try
+        {
+            await ManagementService.UpdateCategoryDisplayNameAsync(
+                SessionId,
+                categoryId,
+                _categoryDisplayNameInput
+            );
+
+            await ManagementService.SetCategorySecondaryTagsAsync(
+                SessionId,
+                categoryId,
+                _categorySelectedTags.ToList()
+            );
+
+            Snackbar.Add("Настройки и теги категории сохранены.", Severity.Success);
+            _editingCategoryId = null;
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка при сохранении категории: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OpenFormatEditor(FormatTreeItemDto format)
+    {
+        _editingFormatId = format.Id;
+        _formatNewTagInput = string.Empty;
+        _formatSelectedTags.Clear();
+        foreach (var tag in format.SecondaryTags)
+            _formatSelectedTags.Add(tag);
+    }
+
+    private void CancelFormatEditor()
+    {
+        _editingFormatId = null;
+        _formatNewTagInput = string.Empty;
+        _formatSelectedTags.Clear();
+    }
+
+    private void AddTagToFormatEditor()
+    {
+        var normalized = StringNormalizer.Normalize(_formatNewTagInput);
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        _formatSelectedTags.Add(normalized);
+        _formatNewTagInput = string.Empty;
+    }
+
+    private async Task SaveFormatTagsAsync(Guid formatId)
+    {
+        _isBusy = true;
+        try
+        {
+            await ManagementService.SetFormatSecondaryTagsAsync(
+                SessionId,
+                formatId,
+                _formatSelectedTags.ToList()
+            );
+
+            Snackbar.Add("Непервичные теги формата сохранены.", Severity.Success);
+            _editingFormatId = null;
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка при сохранении тегов формата: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OpenPrimaryTagRename(PrimaryTagSummaryDto primaryTag)
+    {
+        _renamingPrimaryTagId = primaryTag.Id;
+        _primaryTagNewNameInput = primaryTag.Name;
+    }
+
+    private async Task ExecuteRenamePrimaryTagAsync(Guid primaryTagId)
+    {
+        _isBusy = true;
+        try
+        {
+            await ManagementService.RenamePrimaryTagAsync(
+                SessionId,
+                primaryTagId,
+                _primaryTagNewNameInput
+            );
+
+            Snackbar.Add("Первичный тег успешно переименован на диске и в БД.", Severity.Success);
+            _renamingPrimaryTagId = null;
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Ошибка переименования первичного тега: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task CreateSecondaryTagAsync()
+    {
+        _isBusy = true;
+        try
+        {
+            var tag = await ManagementService.GetOrCreateSecondaryTagAsync(
+                SessionId,
+                _createSecondaryTagInput
+            );
+            _createSecondaryTagInput = string.Empty;
+
+            Snackbar.Add($"Непервичный тег «{tag.Name}» доступен в справочнике.", Severity.Success);
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private void OpenSecondaryTagRename(SecondaryTagSummaryDto secTag)
+    {
+        _renamingSecondaryTagId = secTag.Id;
+        _secondaryTagNewNameInput = secTag.Name;
+    }
+
+    private async Task ExecuteRenameSecondaryTagAsync(Guid secondaryTagId)
+    {
+        _isBusy = true;
+        try
+        {
+            await ManagementService.RenameSecondaryTagAsync(
+                SessionId,
+                secondaryTagId,
+                _secondaryTagNewNameInput
+            );
+
+            Snackbar.Add("Непервичный тег переименован.", Severity.Success);
+            _renamingSecondaryTagId = null;
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task DeleteSecondaryTagAsync(SecondaryTagSummaryDto secTag)
+    {
+        _isBusy = true;
+        try
+        {
+            var deleted = await ManagementService.DeleteSecondaryTagAsync(SessionId, secTag.Id);
+            if (deleted)
+                Snackbar.Add($"Непервичный тег «{secTag.Name}» удален.", Severity.Info);
+
+            await ReloadAsync();
+            await OnDataModified.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is ProductManagementException or ProductsWorkspaceLockException)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private static void ToggleSetItem(HashSet<string> targetSet, string rawName)
+    {
+        var normalized = StringNormalizer.Normalize(rawName);
+        if (string.IsNullOrEmpty(normalized))
+            return;
+
+        if (!targetSet.Remove(normalized))
+            targetSet.Add(normalized);
+    }
+}

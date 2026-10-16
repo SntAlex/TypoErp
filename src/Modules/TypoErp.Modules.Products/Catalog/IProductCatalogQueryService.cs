@@ -29,4 +29,13 @@ public interface IProductCatalogQueryService
         Guid productId,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    ///     Возвращает полное дерево «Категория -> Форматы», список первичных тегов и справочник непервичных тегов
+    ///     для вкладки «Категории, Форматы и Теги» (с поддержкой отображения мягко удаленных записей).
+    /// </summary>
+    Task<ProductsTaxonomyOverviewDto> GetTaxonomyOverviewAsync(
+        bool includeDeleted = true,
+        CancellationToken cancellationToken = default
+    );
 }

@@ -327,4 +327,103 @@ public sealed class ProductManagementServiceTests : IDisposable
         var format = await _dbContext.Formats.SingleAsync(f => f.Code == "45к");
         format.IsDeleted.ShouldBeTrue();
     }
+
+    [Fact]
+    public async Task CategoryFormatAndTagManagement_ShouldUpdateDisplayNameTagsAndRenamePrimaryAndSecondaryTags()
+    {
+        var created = await _managementService.CreateProductAsync(
+            ActiveSessionId,
+            new CreateProductRequest(
+                PrimaryTagName: "исходный первичный тег",
+                Article: "45к открытка праздник",
+                Files: [new ProductFileUpload("card_1.pdf", [10, 20])],
+                SecondaryTagNames: ["сезонный"]
+            )
+        );
+
+        created.CategoryId.ShouldNotBeNull();
+        created.FormatId.ShouldNotBeNull();
+
+        // 1. Обновление DisplayName категории и назначение непервичных тегов категории и формату
+        await _managementService.UpdateCategoryDisplayNameAsync(
+            ActiveSessionId,
+            created.CategoryId.Value,
+            "  Коллекционные открытки  "
+        );
+
+        await _managementService.SetCategorySecondaryTagsAsync(
+            ActiveSessionId,
+            created.CategoryId.Value,
+            ["  Плотный   Картон ", "УФ-лак"]
+        );
+
+        await _managementService.SetFormatSecondaryTagsAsync(
+            ActiveSessionId,
+            created.FormatId.Value,
+            ["  Карманный   Формат "]
+        );
+
+        var updatedCategory = await _dbContext
+            .Categories.AsNoTracking()
+            .Include(c => c.SecondaryTags)
+            .SingleAsync(c => c.Id == created.CategoryId.Value);
+        updatedCategory.DisplayName.ShouldBe("Коллекционные открытки");
+        updatedCategory
+            .SecondaryTags.Select(t => t.Name)
+            .OrderBy(n => n)
+            .ShouldBe(["плотный картон", "уф-лак"]);
+
+        var updatedFormat = await _dbContext
+            .Formats.AsNoTracking()
+            .Include(f => f.SecondaryTags)
+            .SingleAsync(f => f.Id == created.FormatId.Value);
+        updatedFormat.SecondaryTags.Select(t => t.Name).ShouldBe(["карманный формат"]);
+
+        // 2. Переименование первичного тега на диске и в БД
+        await _managementService.RenamePrimaryTagAsync(
+            ActiveSessionId,
+            created.PrimaryTagId,
+            "  Переименованный   Тег 2026 "
+        );
+
+        (await _storage.PrimaryTagDirectoryExistsAsync("исходный первичный тег")).ShouldBeFalse();
+        (await _storage.PrimaryTagDirectoryExistsAsync("переименованный тег 2026")).ShouldBeTrue();
+
+        var renamedPrimaryTag = await _dbContext
+            .PrimaryTags.AsNoTracking()
+            .SingleAsync(t => t.Id == created.PrimaryTagId);
+        renamedPrimaryTag.Name.ShouldBe("переименованный тег 2026");
+        renamedPrimaryTag.NormalizedName.ShouldBe("переименованный тег 2026");
+
+        // 3. Создание, переименование и удаление непервичного тега
+        var customTag = await _managementService.GetOrCreateSecondaryTagAsync(
+            ActiveSessionId,
+            "  Спецвыпуск  "
+        );
+        customTag.Name.ShouldBe("спецвыпуск");
+
+        await _managementService.RenameSecondaryTagAsync(
+            ActiveSessionId,
+            customTag.Id,
+            "  Лимитированный   Выпуск "
+        );
+
+        var renamedSecondary = await _dbContext
+            .SecondaryTags.AsNoTracking()
+            .SingleAsync(t => t.Id == customTag.Id);
+        renamedSecondary.Name.ShouldBe("лимитированный выпуск");
+
+        // Попытка переименовать в уже существующий тег должна выбросить TargetAlreadyExists
+        var duplicateEx = await Should.ThrowAsync<ProductManagementException>(() =>
+            _managementService.RenameSecondaryTagAsync(ActiveSessionId, customTag.Id, "УФ-лак")
+        );
+        duplicateEx.ErrorCode.ShouldBe(ProductManagementErrorCode.TargetAlreadyExists);
+
+        var deleted = await _managementService.DeleteSecondaryTagAsync(
+            ActiveSessionId,
+            customTag.Id
+        );
+        deleted.ShouldBeTrue();
+        (await _dbContext.SecondaryTags.AnyAsync(t => t.Id == customTag.Id)).ShouldBeFalse();
+    }
 }

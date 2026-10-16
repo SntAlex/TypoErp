@@ -179,7 +179,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                 filtered = filtered.Where(p => p.ValidationErrors.Contains(targetError));
             }
 
-            // Полнотекстовый поиск (регистронезависимый для кириллицы и латинице)
+            // Полнотекстовый поиск (регистронезависимый для кириллицы и латиницы)
             if (!string.IsNullOrWhiteSpace(filter.SearchText))
             {
                 var normalizedSearch = StringNormalizer.Normalize(filter.SearchText);
@@ -235,6 +235,159 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                 .FirstOrDefaultAsync(p => p.Id == productId, cancellationToken);
 
             return product is null ? null : MapToDto(product);
+        }
+        finally
+        {
+            _queryLock.Release();
+        }
+    }
+
+    public async Task<ProductsTaxonomyOverviewDto> GetTaxonomyOverviewAsync(
+        bool includeDeleted = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await _queryLock.WaitAsync(cancellationToken);
+        try
+        {
+            var allCategories = await _dbContext
+                .Categories.AsNoTracking()
+                .Include(c => c.SecondaryTags)
+                .Include(c => c.Products)
+                .Include(c => c.Formats)
+                    .ThenInclude(f => f.SecondaryTags)
+                .Include(c => c.Formats)
+                    .ThenInclude(f => f.Products)
+                .OrderBy(c => c.IsDeleted)
+                .ThenBy(c => c.Code)
+                .ToListAsync(cancellationToken);
+
+            var activeCategoriesCount = allCategories.Count(c => !c.IsDeleted);
+            var deletedCategoriesCount = allCategories.Count - activeCategoriesCount;
+
+            var allFormats = allCategories.SelectMany(c => c.Formats).ToList();
+            var activeFormatsCount = allFormats.Count(f => !f.IsDeleted);
+            var deletedFormatsCount = allFormats.Count - activeFormatsCount;
+
+            var filteredCategories = includeDeleted
+                ? allCategories
+                : allCategories.Where(c => !c.IsDeleted).ToList();
+
+            var categoryDtos = new List<CategoryTreeItemDto>(filteredCategories.Count);
+
+            foreach (var category in filteredCategories)
+            {
+                var categoryTagNames = category
+                    .SecondaryTags.Select(t => t.Name)
+                    .OrderBy(n => n, StringComparer.Ordinal)
+                    .ToList();
+
+                var formatsSource = includeDeleted
+                    ? category.Formats
+                    : category.Formats.Where(f => !f.IsDeleted);
+
+                var formatDtos = formatsSource
+                    .OrderBy(f => f.IsDeleted)
+                    .ThenBy(f => f.Code, StringComparer.Ordinal)
+                    .Select(f =>
+                    {
+                        var directFormatTags = f
+                            .SecondaryTags.Select(t => t.Name)
+                            .OrderBy(n => n, StringComparer.Ordinal)
+                            .ToList();
+                        var directFormatSet = directFormatTags.ToHashSet(StringComparer.Ordinal);
+                        var inheritedFromCategory = categoryTagNames
+                            .Where(t => !directFormatSet.Contains(t))
+                            .ToList();
+
+                        var fmtTotal = f.Products.Count;
+                        var fmtValid = f.Products.Count(p => p.IsValid);
+
+                        return new FormatTreeItemDto(
+                            f.Id,
+                            f.CategoryId,
+                            category.Code,
+                            category.DisplayName,
+                            f.Code,
+                            f.IsDeleted,
+                            fmtTotal,
+                            fmtValid,
+                            fmtTotal - fmtValid,
+                            directFormatTags,
+                            inheritedFromCategory,
+                            f.CreatedAtUtc,
+                            f.UpdatedAtUtc
+                        );
+                    })
+                    .ToList();
+
+                var catTotal = category.Products.Count;
+                var catValid = category.Products.Count(p => p.IsValid);
+
+                categoryDtos.Add(
+                    new CategoryTreeItemDto(
+                        category.Id,
+                        category.Code,
+                        category.DisplayName,
+                        category.IsDeleted,
+                        catTotal,
+                        catValid,
+                        catTotal - catValid,
+                        categoryTagNames,
+                        formatDtos,
+                        category.CreatedAtUtc,
+                        category.UpdatedAtUtc
+                    )
+                );
+            }
+
+            var primaryTagEntities = await _dbContext
+                .PrimaryTags.AsNoTracking()
+                .Include(t => t.Products)
+                .OrderBy(t => t.NormalizedName)
+                .ToListAsync(cancellationToken);
+
+            var primaryTagSummaries = primaryTagEntities
+                .Select(t =>
+                {
+                    var total = t.Products.Count;
+                    var valid = t.Products.Count(p => p.IsValid);
+                    return new PrimaryTagSummaryDto(
+                        t.Id,
+                        t.Name,
+                        t.NormalizedName,
+                        total,
+                        valid,
+                        total - valid,
+                        _options.MaxProductsPerPrimaryTag,
+                        t.CreatedAtUtc,
+                        t.UpdatedAtUtc
+                    );
+                })
+                .ToList();
+
+            var secondaryTagSummaries = await _dbContext
+                .SecondaryTags.AsNoTracking()
+                .OrderBy(t => t.Name)
+                .Select(t => new SecondaryTagSummaryDto(
+                    t.Id,
+                    t.Name,
+                    t.Products.Count,
+                    t.Categories.Count,
+                    t.Formats.Count,
+                    t.CreatedAtUtc
+                ))
+                .ToListAsync(cancellationToken);
+
+            return new ProductsTaxonomyOverviewDto(
+                categoryDtos,
+                primaryTagSummaries,
+                secondaryTagSummaries,
+                activeCategoriesCount,
+                deletedCategoriesCount,
+                activeFormatsCount,
+                deletedFormatsCount
+            );
         }
         finally
         {

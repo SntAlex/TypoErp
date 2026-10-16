@@ -31,7 +31,11 @@ public sealed class ProductCatalogQueryServiceTests : IDisposable
         _dbContext = new ProductsDbContext(dbOptions);
         _dbContext.Database.EnsureCreated();
 
-        _options = new ProductsStorageOptions { RootPath = "/virtual/storage/products" };
+        _options = new ProductsStorageOptions
+        {
+            RootPath = "/virtual/storage/products",
+            MaxProductsPerPrimaryTag = 500,
+        };
         _storage = new FakeProductStorage(_options);
         _queryService = new ProductCatalogQueryService(_dbContext, _storage, _options);
     }
@@ -128,6 +132,100 @@ public sealed class ProductCatalogQueryServiceTests : IDisposable
 
         var missing = await _queryService.GetProductByIdAsync(Guid.NewGuid());
         missing.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task GetTaxonomyOverviewAsync_ShouldReturnCategoryFormatTreeWithInheritedTagsSoftDeletedItemsAndTagSummaries()
+    {
+        await SeedSampleCatalogAsync();
+        var now = DateTimeOffset.UtcNow;
+
+        // Добавим мягко удаленную категорию со своим мягко удаленным форматом и сохраненными тегами
+        var deletedCategory = new Category("sticker", now, "Старые стикеры");
+        deletedCategory.SoftDelete(now);
+        var deletedFormat = new Format(deletedCategory.Id, "10х15", now);
+        deletedFormat.SoftDelete(now);
+
+        // Также добавим мягко удаленный формат внутрь активной категории "card"
+        var activeCardCategory = await _dbContext
+            .Categories.Include(c => c.SecondaryTags)
+            .SingleAsync(c => c.Code == "card");
+        var deletedCardFormat = new Format(activeCardCategory.Id, "а6", now);
+        deletedCardFormat.SoftDelete(now);
+
+        var archiveTag = new SecondaryTag("архивный тег", now);
+        deletedCategory.SecondaryTags.Add(archiveTag);
+        deletedFormat.SecondaryTags.Add(archiveTag);
+
+        _dbContext.Categories.Add(deletedCategory);
+        _dbContext.Formats.AddRange(deletedFormat, deletedCardFormat);
+        _dbContext.SecondaryTags.Add(archiveTag);
+        await _dbContext.SaveChangesAsync();
+
+        // 1. Запрос с includeDeleted = true (показывает и активные, и мягко удаленные)
+        var fullOverview = await _queryService.GetTaxonomyOverviewAsync(includeDeleted: true);
+
+        fullOverview.ActiveCategoriesCount.ShouldBe(2);
+        fullOverview.DeletedCategoriesCount.ShouldBe(1);
+        fullOverview.ActiveFormatsCount.ShouldBe(2);
+        fullOverview.DeletedFormatsCount.ShouldBe(2);
+        fullOverview.Categories.Count.ShouldBe(3);
+
+        var cardNode = fullOverview.Categories.Single(c => c.Code == "card");
+        cardNode.DisplayName.ShouldBe("Наклейки");
+        cardNode.DisplayLabel.ShouldBe("Наклейки (card)");
+        cardNode.IsDeleted.ShouldBeFalse();
+        cardNode.TotalProductsCount.ShouldBe(1);
+        cardNode.ValidProductsCount.ShouldBe(1);
+        cardNode.InvalidProductsCount.ShouldBe(0);
+        cardNode.SecondaryTags.ShouldBe(["глянец"]);
+        cardNode.Formats.Count.ShouldBe(2);
+
+        var format45k = cardNode.Formats.Single(f => f.Code == "45к");
+        format45k.IsDeleted.ShouldBeFalse();
+        format45k.TotalProductsCount.ShouldBe(1);
+        format45k.SecondaryTags.ShouldBe(["хит"]);
+        format45k.InheritedCategorySecondaryTags.ShouldBe(["глянец"]);
+
+        var formatA6 = cardNode.Formats.Single(f => f.Code == "а6");
+        formatA6.IsDeleted.ShouldBeTrue();
+        formatA6.TotalProductsCount.ShouldBe(0);
+
+        var stickerNode = fullOverview.Categories.Single(c => c.Code == "sticker");
+        stickerNode.IsDeleted.ShouldBeTrue();
+        stickerNode.DisplayName.ShouldBe("Старые стикеры");
+        stickerNode.SecondaryTags.ShouldBe(["архивный тег"]);
+        stickerNode.Formats.ShouldHaveSingleItem().Code.ShouldBe("10х15");
+
+        // Проверяем статистику первичных тегов
+        fullOverview.PrimaryTags.Count.ShouldBe(2);
+        var springTag = fullOverview.PrimaryTags.Single(t => t.NormalizedName == "весна 2026");
+        springTag.TotalProductsCount.ShouldBe(2);
+        springTag.ValidProductsCount.ShouldBe(2);
+        springTag.InvalidProductsCount.ShouldBe(0);
+        springTag.MaxCapacity.ShouldBe(500);
+
+        var autumnTag = fullOverview.PrimaryTags.Single(t => t.NormalizedName == "осень 2026");
+        autumnTag.TotalProductsCount.ShouldBe(1);
+        autumnTag.ValidProductsCount.ShouldBe(0);
+        autumnTag.InvalidProductsCount.ShouldBe(1);
+
+        // Проверяем статистику непервичных тегов
+        fullOverview.SecondaryTags.Count.ShouldBe(4);
+        var archiveTagSummary = fullOverview.SecondaryTags.Single(t => t.Name == "архивный тег");
+        archiveTagSummary.DirectProductsCount.ShouldBe(0);
+        archiveTagSummary.CategoriesCount.ShouldBe(1);
+        archiveTagSummary.FormatsCount.ShouldBe(1);
+
+        // 2. Запрос с includeDeleted = false (скрывает мягко удаленные категории и форматы)
+        var activeOnlyOverview = await _queryService.GetTaxonomyOverviewAsync(
+            includeDeleted: false
+        );
+
+        activeOnlyOverview.Categories.Count.ShouldBe(2);
+        activeOnlyOverview.Categories.ShouldNotContain(c => c.IsDeleted);
+        var activeCardNode = activeOnlyOverview.Categories.Single(c => c.Code == "card");
+        activeCardNode.Formats.ShouldHaveSingleItem().Code.ShouldBe("45к");
     }
 
     private async Task<(
