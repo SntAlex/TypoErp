@@ -9,4 +9,5 @@ public static class TypoErpClaimTypes
 {
     public const string DisplayName = "typoerp_display_name";
     public const string Permission = AppPermissions.ClaimType;
+    public const string SessionId = "typoerp_session_id";
 }

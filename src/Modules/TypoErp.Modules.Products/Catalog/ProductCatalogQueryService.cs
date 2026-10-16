@@ -139,6 +139,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
 
             IQueryable<Product> query = _dbContext
                 .Products.AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.PrimaryTag)
                 .Include(p => p.Category)
                     .ThenInclude(c => c!.SecondaryTags)
@@ -225,6 +226,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
         {
             var product = await _dbContext
                 .Products.AsNoTracking()
+                .AsSplitQuery()
                 .Include(p => p.PrimaryTag)
                 .Include(p => p.Category)
                     .ThenInclude(c => c!.SecondaryTags)
@@ -252,6 +254,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
         {
             var allCategories = await _dbContext
                 .Categories.AsNoTracking()
+                .AsSplitQuery()
                 .Include(c => c.SecondaryTags)
                 .Include(c => c.Products)
                 .Include(c => c.Formats)
@@ -366,9 +369,16 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                 })
                 .ToList();
 
-            var secondaryTagSummaries = await _dbContext
+            var secondaryTagEntities = await _dbContext
                 .SecondaryTags.AsNoTracking()
+                .AsSplitQuery()
+                .Include(t => t.Products)
+                .Include(t => t.Categories)
+                .Include(t => t.Formats)
                 .OrderBy(t => t.Name)
+                .ToListAsync(cancellationToken);
+
+            var secondaryTagSummaries = secondaryTagEntities
                 .Select(t => new SecondaryTagSummaryDto(
                     t.Id,
                     t.Name,
@@ -377,7 +387,7 @@ public sealed class ProductCatalogQueryService : IProductCatalogQueryService
                     t.Formats.Count,
                     t.CreatedAtUtc
                 ))
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             return new ProductsTaxonomyOverviewDto(
                 categoryDtos,

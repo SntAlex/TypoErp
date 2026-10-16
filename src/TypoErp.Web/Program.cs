@@ -66,13 +66,23 @@ var connectionString =
     );
 
 builder.Services.AddDbContext<IdentityDbContext>(
-    options => options.UseNpgsql(connectionString),
+    options =>
+        options.UseNpgsql(
+            connectionString,
+            npgsqlOptions =>
+                npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+        ),
     contextLifetime: ServiceLifetime.Transient,
     optionsLifetime: ServiceLifetime.Singleton
 );
 
 builder.Services.AddDbContext<ProductsDbContext>(
-    options => options.UseNpgsql(connectionString),
+    options =>
+        options.UseNpgsql(
+            connectionString,
+            npgsqlOptions =>
+                npgsqlOptions.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery)
+        ),
     contextLifetime: ServiceLifetime.Transient,
     optionsLifetime: ServiceLifetime.Singleton
 );
@@ -114,7 +124,7 @@ builder.Services.AddTransient<IProductSyncService, ProductSyncService>();
 builder.Services.AddTransient<IProductManagementService, ProductManagementService>();
 builder.Services.AddTransient<IProductCatalogQueryService, ProductCatalogQueryService>();
 
-// Координатор блокировок сессии Blazor Circuit (1 экземпляр на вкладку работника)
+// Координатор блокировок сессии Blazor Circuit (сохраняет SessionId из Cookie при нажатии F5)
 builder.Services.AddScoped<IProductsWorkspaceCircuitSession, ProductsWorkspaceCircuitSession>();
 
 var app = builder.Build();

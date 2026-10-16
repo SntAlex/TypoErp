@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Mvc;
 using TypoErp.Modules.Identity.Authentication;
 using TypoErp.Modules.Identity.Management;
+using TypoErp.Modules.Products.Locking;
 using TypoErp.Web.Security;
 
 namespace TypoErp.Web.Endpoints;
@@ -73,8 +74,12 @@ public static class AuthEndpoints
         endpoints
             .MapPost(
                 "/account/logout",
-                async (HttpContext httpContext) =>
+                async (HttpContext httpContext, IProductsWorkspaceLockService lockService) =>
                 {
+                    var sessionId = httpContext.User.GetWorkspaceSessionId();
+                    if (!string.IsNullOrWhiteSpace(sessionId))
+                        lockService.Release(sessionId);
+
                     await httpContext.SignOutAsync(
                         CookieAuthenticationDefaults.AuthenticationScheme
                     );

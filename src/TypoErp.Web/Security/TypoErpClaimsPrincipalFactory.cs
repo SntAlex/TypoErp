@@ -13,11 +13,16 @@ public static class TypoErpClaimsPrincipalFactory
     public static ClaimsPrincipal Create(
         AppUser user,
         IReadOnlyCollection<AppPermission> effectivePermissions,
-        string authenticationType = CookieAuthenticationDefaults.AuthenticationScheme
+        string authenticationType = CookieAuthenticationDefaults.AuthenticationScheme,
+        string? sessionId = null
     )
     {
         ArgumentNullException.ThrowIfNull(user);
         ArgumentNullException.ThrowIfNull(effectivePermissions);
+
+        var resolvedSessionId = string.IsNullOrWhiteSpace(sessionId)
+            ? $"session-{Guid.NewGuid():N}"
+            : sessionId.Trim();
 
         var claims = new List<Claim>
         {
@@ -25,6 +30,7 @@ public static class TypoErpClaimsPrincipalFactory
             new(ClaimTypes.Name, user.Username),
             new(TypoErpClaimTypes.DisplayName, user.DisplayName),
             new(ClaimTypes.Role, user.Role.ToString()),
+            new(TypoErpClaimTypes.SessionId, resolvedSessionId),
         };
 
         foreach (var permission in effectivePermissions.Distinct())

@@ -641,6 +641,8 @@ else
             var authState = await AuthenticationStateTask;
             var user = authState.User;
 
+            CircuitSession.SynchronizeSession(user);
+
             _canViewProducts = user.HasPermission(AppPermission.ProductsView);
             _canEditProducts = user.HasPermission(AppPermission.ProductsEdit);
             _canSyncProducts = user.HasPermission(AppPermission.ProductsSync);

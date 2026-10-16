@@ -1,26 +1,50 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using TypoErp.Modules.Products.Locking;
+using TypoErp.Web.Security;
 
 namespace TypoErp.Web.Workspace;
 
 /// <summary>
-///     Реализация Scoped-сессии блокировки раздела «Товары» для Blazor Interactive Server.
+///     Реализация Scoped-координатора блокировки раздела «Товары» для Blazor Interactive Server.
+///     Использует устойчивый идентификатор сессии из Cookie пользователя, благодаря чему обновление страницы (F5)
+///     не сбрасывает захваченную блокировку раздела.
 /// </summary>
 public sealed class ProductsWorkspaceCircuitSession : IProductsWorkspaceCircuitSession
 {
     private readonly IProductsWorkspaceLockService _lockService;
     private bool _disposed;
 
-    public ProductsWorkspaceCircuitSession(IProductsWorkspaceLockService lockService)
+    public ProductsWorkspaceCircuitSession(
+        IProductsWorkspaceLockService lockService,
+        IHttpContextAccessor? httpContextAccessor = null,
+        string? sessionId = null
+    )
     {
         ArgumentNullException.ThrowIfNull(lockService);
         _lockService = lockService;
-        SessionId = $"circuit-{Guid.NewGuid():N}";
+
+        if (!string.IsNullOrWhiteSpace(sessionId))
+        {
+            SessionId = sessionId.Trim();
+        }
+        else if (
+            httpContextAccessor?.HttpContext?.User.GetWorkspaceSessionId() is
+            { Length: > 0 } cookieSessionId
+        )
+        {
+            SessionId = cookieSessionId;
+        }
+        else
+        {
+            SessionId = $"circuit-{Guid.NewGuid():N}";
+        }
 
         _lockService.LockStateChanged += OnLockStateChanged;
         _lockService.LockTakenOver += OnLockTakenOver;
     }
 
-    public string SessionId { get; }
+    public string SessionId { get; private set; }
 
     public ProductsWorkspaceLockInfo? CurrentLock => _lockService.GetCurrentLock();
 
@@ -29,6 +53,22 @@ public sealed class ProductsWorkspaceCircuitSession : IProductsWorkspaceCircuitS
     public WorkspaceTakeoverAlert? TakeoverAlert { get; private set; }
 
     public event Action? StateChanged;
+
+    public void SynchronizeSession(ClaimsPrincipal? user)
+    {
+        if (_disposed)
+            return;
+
+        var resolvedSessionId = user.GetWorkspaceSessionId();
+        if (
+            string.IsNullOrWhiteSpace(resolvedSessionId)
+            || string.Equals(SessionId, resolvedSessionId, StringComparison.Ordinal)
+        )
+            return;
+
+        SessionId = resolvedSessionId;
+        NotifyStateChanged();
+    }
 
     public ProductsWorkspaceLockAcquireResult TryAcquire(Guid userId, string userDisplayName)
     {
@@ -85,9 +125,6 @@ public sealed class ProductsWorkspaceCircuitSession : IProductsWorkspaceCircuitS
         _disposed = true;
         _lockService.LockStateChanged -= OnLockStateChanged;
         _lockService.LockTakenOver -= OnLockTakenOver;
-
-        // Если вкладка работника закрылась, автоматически освобождаем удерживаемую ей блокировку
-        _lockService.Release(SessionId);
     }
 
     private void OnLockTakenOver(object? sender, ProductsWorkspaceLockTakenOverEventArgs e)

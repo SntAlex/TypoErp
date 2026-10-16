@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Shouldly;
 using TypoErp.Modules.Identity.Entities;
 using TypoErp.Modules.Identity.Permissions;
@@ -10,7 +11,7 @@ public sealed class TypoErpClaimsPrincipalFactoryTests
     private static readonly DateTimeOffset FixedNow = new(2026, 10, 15, 10, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void CreatePrincipal_ForWorkerWithDelegatedPermissions_ShouldPopulateClaimsAndPermissionsCorrectly()
+    public void CreatePrincipal_ForWorkerWithDelegatedPermissions_ShouldPopulateClaimsPermissionsAndWorkspaceSessionId()
     {
         var worker = new AppUser(
             "ivan.operator",
@@ -23,7 +24,8 @@ public sealed class TypoErpClaimsPrincipalFactoryTests
 
         var principal = TypoErpClaimsPrincipalFactory.Create(
             worker,
-            worker.GetEffectivePermissions()
+            worker.GetEffectivePermissions(),
+            sessionId: "session-fixed-123"
         );
 
         principal.IsAuthenticated().ShouldBeTrue();
@@ -32,6 +34,7 @@ public sealed class TypoErpClaimsPrincipalFactoryTests
         principal.GetDisplayName().ShouldBe("Иван Оператор");
         principal.GetUserRole().ShouldBe(UserRole.Worker);
         principal.IsAdministrator().ShouldBeFalse();
+        principal.GetWorkspaceSessionId().ShouldBe("session-fixed-123");
 
         principal.HasPermission(AppPermission.ProductsView).ShouldBeTrue();
         principal.HasPermission(AppPermission.ProductsEdit).ShouldBeTrue();
@@ -41,6 +44,22 @@ public sealed class TypoErpClaimsPrincipalFactoryTests
         principal.HasPermission(AppPermission.ProductsForceUnlock).ShouldBeFalse();
         principal.HasPermission(AppPermission.UsersManage).ShouldBeFalse();
         principal.CanForceTakeoverProductsLock().ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetWorkspaceSessionId_WhenSessionClaimIsMissingInLegacyCookie_ShouldFallbackToDeterministicUserIdSession()
+    {
+        var userId = Guid.NewGuid();
+        var claims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, userId.ToString("D")),
+            new Claim(ClaimTypes.Name, "legacy.user"),
+        };
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(claims, "Cookies"));
+
+        var workspaceSessionId = principal.GetWorkspaceSessionId();
+
+        workspaceSessionId.ShouldBe($"user-session-{userId:N}");
     }
 
     [Fact]
@@ -65,6 +84,7 @@ public sealed class TypoErpClaimsPrincipalFactoryTests
         principal.GetUserRole().ShouldBe(UserRole.Administrator);
         principal.IsAdministrator().ShouldBeTrue();
         principal.CanForceTakeoverProductsLock().ShouldBeTrue();
+        principal.GetWorkspaceSessionId().ShouldNotBeNullOrWhiteSpace();
 
         foreach (var permission in AppPermissions.All)
             principal.HasPermission(permission).ShouldBeTrue();

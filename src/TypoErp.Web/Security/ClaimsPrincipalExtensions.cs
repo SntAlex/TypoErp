@@ -5,7 +5,7 @@ using TypoErp.Modules.Identity.Permissions;
 namespace TypoErp.Web.Security;
 
 /// <summary>
-///     Методы расширения для удобного чтения идентификатора, роли и разрешений работника из <see cref="ClaimsPrincipal" />.
+///     Методы расширения для удобного чтения идентификатора, роли, сессии и разрешений работника из <see cref="ClaimsPrincipal" />.
 /// </summary>
 public static class ClaimsPrincipalExtensions
 {
@@ -32,6 +32,22 @@ public static class ClaimsPrincipalExtensions
             return displayName;
 
         return principal.GetUsername();
+    }
+
+    /// <summary>
+    ///     Возвращает устойчивый идентификатор сессии пользователя из Cookie (сохраняется при обновлении страницы по F5).
+    /// </summary>
+    public static string? GetWorkspaceSessionId(this ClaimsPrincipal? principal)
+    {
+        if (!principal.IsAuthenticated())
+            return null;
+
+        var sessionClaim = principal?.FindFirstValue(TypoErpClaimTypes.SessionId);
+        if (!string.IsNullOrWhiteSpace(sessionClaim))
+            return sessionClaim.Trim();
+
+        var userId = principal.GetUserId();
+        return userId.HasValue ? $"user-session-{userId.Value:N}" : null;
     }
 
     public static UserRole GetUserRole(this ClaimsPrincipal? principal)

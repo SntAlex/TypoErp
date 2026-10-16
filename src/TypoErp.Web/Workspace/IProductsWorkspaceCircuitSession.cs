@@ -1,16 +1,17 @@
+using System.Security.Claims;
 using TypoErp.Modules.Products.Locking;
 
 namespace TypoErp.Web.Workspace;
 
 /// <summary>
 ///     Сессионный координатор блокировки раздела «Товары» для текущего Blazor-подключения (Circuit).
-///     Обеспечивает реактивное уведомление при перехвате блокировки администратором
-///     и автоматическое освобождение лока при закрытии вкладки браузера.
+///     Сохраняет удержание блокировки при обновлении страницы (F5) в рамках аутентификационной сессии работника
+///     и обеспечивает реактивное уведомление при перехвате блокировки администратором.
 /// </summary>
 public interface IProductsWorkspaceCircuitSession : IDisposable
 {
     /// <summary>
-    ///     Уникальный идентификатор текущей Blazor-сессии (вкладки).
+    ///     Уникальный идентификатор сессии работника (сохраняется между перезагрузками страницы по F5).
     /// </summary>
     string SessionId { get; }
 
@@ -33,6 +34,11 @@ public interface IProductsWorkspaceCircuitSession : IDisposable
     ///     Событие изменения состояния блокировки для реактивной перерисовки Blazor-компонентов.
     /// </summary>
     event Action? StateChanged;
+
+    /// <summary>
+    ///     Синхронизирует идентификатор сессии с текущим аутентифицированным пользователем.
+    /// </summary>
+    void SynchronizeSession(ClaimsPrincipal? user);
 
     /// <summary>
     ///     Пытается занять блокировку раздела для текущей сессии работника.

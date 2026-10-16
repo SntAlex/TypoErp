@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
+using TypoErp.Modules.Identity.Entities;
+using TypoErp.Modules.Identity.Permissions;
 using TypoErp.Modules.Products.Locking;
+using TypoErp.Web.Security;
 using TypoErp.Web.Workspace;
 
 namespace TypoErp.Web.Tests.Workspace;
@@ -10,32 +13,90 @@ public sealed class ProductsWorkspaceCircuitSessionTests
     private static readonly DateTimeOffset FixedNow = new(2026, 10, 15, 14, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public void TryAcquire_ShouldAcquireLockAndReleaseAutomaticallyOnCircuitDispose()
+    public void TryAcquire_WhenPageReloadedWithF5_ShouldPreserveLockAcrossCircuitRecreationsUntilExplicitRelease()
     {
         var timeProvider = new FakeTimeProvider(FixedNow);
         var lockService = new ProductsWorkspaceLockService(timeProvider);
 
         var workerId = Guid.NewGuid();
-        string capturedSessionId;
+        const string persistentCookieSessionId = "session-worker-browser-1";
 
-        using (var circuitSession = new ProductsWorkspaceCircuitSession(lockService))
+        // 1. Первая загрузка страницы: работник захватывает блокировку
+        using (
+            var circuitBeforeF5 = new ProductsWorkspaceCircuitSession(
+                lockService,
+                sessionId: persistentCookieSessionId
+            )
+        )
         {
-            capturedSessionId = circuitSession.SessionId;
-            capturedSessionId.ShouldNotBeNullOrWhiteSpace();
-            circuitSession.IsHoldingLock.ShouldBeFalse();
+            circuitBeforeF5.SessionId.ShouldBe(persistentCookieSessionId);
+            circuitBeforeF5.IsHoldingLock.ShouldBeFalse();
 
-            var acquireResult = circuitSession.TryAcquire(workerId, "Антон Печатник");
+            var acquireResult = circuitBeforeF5.TryAcquire(workerId, "Антон Печатник");
 
             acquireResult.IsAcquired.ShouldBeTrue();
-            circuitSession.IsHoldingLock.ShouldBeTrue();
-            circuitSession.CurrentLock.ShouldNotBeNull();
-            circuitSession.CurrentLock.UserDisplayName.ShouldBe("Антон Печатник");
-            lockService.IsHeldBySession(capturedSessionId).ShouldBeTrue();
+            circuitBeforeF5.IsHoldingLock.ShouldBeTrue();
+            circuitBeforeF5.CurrentLock.ShouldNotBeNull();
+            circuitBeforeF5.CurrentLock.UserDisplayName.ShouldBe("Антон Печатник");
         }
 
-        // После закрытия вкладки (Dispose сессии) блокировка автоматически снимается
+        // 2. Сработал Dispose старого Circuit при нажатии F5 — блокировка НЕ должна сбрасываться
+        lockService.IsHeldBySession(persistentCookieSessionId).ShouldBeTrue();
+        lockService.GetCurrentLock().ShouldNotBeNull();
+
+        // 3. Новый Circuit после F5 подхватывает ту же сессию работника и видит активный лок
+        using (
+            var circuitAfterF5 = new ProductsWorkspaceCircuitSession(
+                lockService,
+                sessionId: persistentCookieSessionId
+            )
+        )
+        {
+            circuitAfterF5.IsHoldingLock.ShouldBeTrue();
+            circuitAfterF5.CurrentLock.ShouldNotBeNull();
+            circuitAfterF5.CurrentLock.UserId.ShouldBe(workerId);
+
+            // Явное освобождение кнопкой «Освободить раздел» снимает блокировку
+            circuitAfterF5.Release().ShouldBeTrue();
+            circuitAfterF5.IsHoldingLock.ShouldBeFalse();
+        }
+
         lockService.GetCurrentLock().ShouldBeNull();
-        lockService.IsHeldBySession(capturedSessionId).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void SynchronizeSession_WhenInitializedFromClaimsPrincipal_ShouldAdoptCookieSessionIdAndKeepLockOnF5()
+    {
+        var lockService = new ProductsWorkspaceLockService(new FakeTimeProvider(FixedNow));
+        var worker = new AppUser(
+            "operator1",
+            "Оператор 1",
+            "hash",
+            UserRole.Worker,
+            FixedNow,
+            [AppPermission.ProductsView, AppPermission.ProductsEdit]
+        );
+        var principal = TypoErpClaimsPrincipalFactory.Create(
+            worker,
+            worker.GetEffectivePermissions(),
+            sessionId: "cookie-session-abc"
+        );
+
+        using (var firstCircuit = new ProductsWorkspaceCircuitSession(lockService))
+        {
+            firstCircuit.SynchronizeSession(principal);
+            firstCircuit.SessionId.ShouldBe("cookie-session-abc");
+
+            firstCircuit.TryAcquire(worker.Id, worker.DisplayName).IsAcquired.ShouldBeTrue();
+            firstCircuit.IsHoldingLock.ShouldBeTrue();
+        }
+
+        using (var secondCircuitAfterF5 = new ProductsWorkspaceCircuitSession(lockService))
+        {
+            secondCircuitAfterF5.SynchronizeSession(principal);
+            secondCircuitAfterF5.SessionId.ShouldBe("cookie-session-abc");
+            secondCircuitAfterF5.IsHoldingLock.ShouldBeTrue();
+        }
     }
 
     [Fact]
@@ -44,8 +105,14 @@ public sealed class ProductsWorkspaceCircuitSessionTests
         var timeProvider = new FakeTimeProvider(FixedNow);
         var lockService = new ProductsWorkspaceLockService(timeProvider);
 
-        var workerSession = new ProductsWorkspaceCircuitSession(lockService);
-        var adminSession = new ProductsWorkspaceCircuitSession(lockService);
+        var workerSession = new ProductsWorkspaceCircuitSession(
+            lockService,
+            sessionId: "session-worker"
+        );
+        var adminSession = new ProductsWorkspaceCircuitSession(
+            lockService,
+            sessionId: "session-admin"
+        );
 
         var workerId = Guid.NewGuid();
         var adminId = Guid.NewGuid();
@@ -76,11 +143,12 @@ public sealed class ProductsWorkspaceCircuitSessionTests
         workerSession.TakeoverAlert.TakenOverAtUtc.ShouldBe(FixedNow.AddMinutes(3));
         workerStateChangeCount.ShouldBeGreaterThanOrEqualTo(2);
 
-        // Когда вытесненный работник закрывает свою вкладку, лок администратора НЕ сбрасывается
+        // Когда вытесненный работник обновляет/закрывает вкладку, лок администратора сохраняется
         workerSession.Dispose();
         adminSession.IsHoldingLock.ShouldBeTrue();
         lockService.IsHeldBySession(adminSession.SessionId).ShouldBeTrue();
 
+        adminSession.Release().ShouldBeTrue();
         adminSession.Dispose();
         lockService.GetCurrentLock().ShouldBeNull();
     }
@@ -89,8 +157,14 @@ public sealed class ProductsWorkspaceCircuitSessionTests
     public void DismissTakeoverAlert_ShouldClearBannerWhileKeepingReadOnlyState()
     {
         var lockService = new ProductsWorkspaceLockService(new FakeTimeProvider(FixedNow));
-        using var workerSession = new ProductsWorkspaceCircuitSession(lockService);
-        using var adminSession = new ProductsWorkspaceCircuitSession(lockService);
+        using var workerSession = new ProductsWorkspaceCircuitSession(
+            lockService,
+            sessionId: "session-worker"
+        );
+        using var adminSession = new ProductsWorkspaceCircuitSession(
+            lockService,
+            sessionId: "session-admin"
+        );
 
         workerSession.TryAcquire(Guid.NewGuid(), "Работник 1");
         adminSession.ForceTakeover(Guid.NewGuid(), "Админ", "Проверка");

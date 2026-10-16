@@ -125,6 +125,8 @@
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
 
+        WorkspaceSession.SynchronizeSession(user);
+
         _userId = user.GetUserId();
         _userDisplayName = user.GetDisplayName();
         _canEditOrSync = user.CanEditOrSyncProducts();

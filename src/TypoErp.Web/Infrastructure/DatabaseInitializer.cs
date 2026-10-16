@@ -1,3 +1,4 @@
+using System.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -76,18 +77,52 @@ public static class DatabaseInitializer
         if (!await creator.ExistsAsync(cancellationToken))
             await creator.CreateAsync(cancellationToken);
 
+        if (await TableExistsAsync(dbContext, probeTableName, cancellationToken))
+            return;
+
+        await creator.CreateTablesAsync(cancellationToken);
+        logger.LogInformation(
+            "Created database tables for context {DbContextName} (probe table '{TableName}')",
+            dbContext.GetType().Name,
+            probeTableName
+        );
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        DbContext dbContext,
+        string tableName,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose)
+            await connection.OpenAsync(cancellationToken);
+
         try
         {
-            await creator.CreateTablesAsync(cancellationToken);
-            logger.LogInformation(
-                "Created database tables for context {DbContextName} (probe table '{TableName}')",
-                dbContext.GetType().Name,
-                probeTableName
-            );
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_schema = current_schema()
+                      AND table_name = @tableName
+                );
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@tableName";
+            parameter.Value = tableName;
+            command.Parameters.Add(parameter);
+
+            var result = await command.ExecuteScalarAsync(cancellationToken);
+            return result is true;
         }
-        catch (Exception)
+        finally
         {
-            // Таблицы данного контекста уже существуют в БД
+            if (shouldClose)
+                await connection.CloseAsync();
         }
     }
 }

@@ -245,7 +245,8 @@ public sealed class ProductManagementService : IProductManagementService
         _dbContext.ChangeTracker.Clear();
 
         var product = await _dbContext
-            .Products.Include(p => p.PrimaryTag)
+            .Products.AsSplitQuery()
+            .Include(p => p.PrimaryTag)
             .Include(p => p.Files)
             .Include(p => p.SecondaryTags)
             .FirstOrDefaultAsync(p => p.Id == request.ProductId, cancellationToken);
@@ -865,7 +866,8 @@ public sealed class ProductManagementService : IProductManagementService
         _dbContext.ChangeTracker.Clear();
 
         var primaryTag = await _dbContext
-            .PrimaryTags.Include(t => t.Products)
+            .PrimaryTags.AsSplitQuery()
+            .Include(t => t.Products)
                 .ThenInclude(p => p.Files)
             .FirstOrDefaultAsync(t => t.Id == primaryTagId, cancellationToken);
 
